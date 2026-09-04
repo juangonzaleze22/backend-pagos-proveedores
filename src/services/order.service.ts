@@ -93,11 +93,6 @@ export class OrderService {
         }
       });
 
-      // Consumir saldo excedente (créditos) del proveedor
-      if (surplusAmountToApply > 0) {
-        await creditService.consumeCreditFromSupplier(supplierId, surplusAmountToApply, tx);
-      }
-
       // Actualizar total de deuda del proveedor (solo lo que no se cubrió con excedente)
       if (debtAmountToAddToSupplier > 0) {
         await tx.supplier.update({
@@ -111,6 +106,13 @@ export class OrderService {
 
       return { order: newOrder, debt: newDebt };
     });
+
+    // Reconciliar créditos para reflejar correctamente el surplusAmountAtCreation aplicado
+    if (surplusAmountToApply > 0) {
+      console.log(`🔄 Reconciliando créditos del proveedor #${supplierId} tras crear pedido con excedente...`);
+      await creditService.reconcileSupplierCredits(supplierId);
+      console.log('✅ Créditos reconciliados');
+    }
 
     return {
       id: order.id,
@@ -575,15 +577,6 @@ export class OrderService {
           }
         });
 
-        if (surplusAmtChanged && currentOrder.debt) {
-          const d = newSurplusTotal - oldSurplus;
-          if (d > 0) {
-            await creditService.consumeCreditFromSupplier(currentOrder.supplierId, d, tx);
-          } else if (d < 0) {
-            await creditService.restoreCreditToSupplier(currentOrder.supplierId, -d, tx);
-          }
-        }
-
         if (currentOrder.debt) {
           await tx.debt.update({
             where: { orderId: orderId },
@@ -628,6 +621,13 @@ export class OrderService {
 
         return order;
       });
+
+      // Reconciliar créditos si cambió el saldo excedente aplicado
+      if (surplusAmtChanged) {
+        console.log(`🔄 Reconciliando créditos del proveedor #${currentOrder.supplierId} tras actualizar excedente...`);
+        await creditService.reconcileSupplierCredits(currentOrder.supplierId);
+        console.log('✅ Créditos reconciliados');
+      }
 
       console.log(`✅ Orden ${orderId} actualizada en BD`);
 

@@ -7,6 +7,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
+    "postinstall": "prisma generate",
     "dev": "nodemon",
     "build": "node -e \"try { require('fs').rmSync('dist', { recursive: true }) } catch (e) {}\" && prisma generate && prisma db push && tsc",
     "build:deploy": "node -e \"try { require('fs').rmSync('dist', { recursive: true }) } catch (e) {}\" && prisma generate && tsc",
@@ -17,7 +18,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node prisma/seed.ts",
     "prisma:studio": "prisma studio",
-    "update-debt-statuses": "ts-node src/scripts/update-debt-statuses.ts"
+    "update-debt-statuses": "ts-node src/scripts/update-debt-statuses.ts",
+    "reconcile-credits": "ts-node src/scripts/reconcile-credits.ts"
   },
   "keywords": [],
   "author": "",
@@ -32,7 +34,8 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
-    "pdfkit": "^0.17.2"
+    "pdfkit": "^0.17.2",
+    "prisma": "^5.7.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -44,7 +47,6 @@
     "@types/pdfkit": "^0.17.5",
     "bestzip": "^2.2.1",
     "nodemon": "^3.0.2",
-    "prisma": "^5.7.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.0"
   },

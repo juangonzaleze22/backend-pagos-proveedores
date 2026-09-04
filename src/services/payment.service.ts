@@ -265,70 +265,38 @@ export class PaymentService {
       await supplierService.updateSupplierLastPaymentDate(supplierId, new Date(paymentDate));
       console.log('✅ Última fecha de pago actualizada');
 
-      // Manejar excedente
-      let creditCreated = null;
+      // Manejar excedente aplicado directamente a otra deuda (APPLY_TO_DEBT)
       let appliedToTargetAmount = 0;
-      if (surplusAmount > 0) {
+      if (surplusAmount > 0 && surplusAction === 'APPLY_TO_DEBT' && surplusTargetDebtId) {
         console.log(`💰 Excedente detectado: $${surplusAmount.toFixed(2)}`);
 
-        if (surplusAction === 'APPLY_TO_DEBT' && surplusTargetDebtId) {
-          const targetDebt = await prisma.debt.findUnique({
-            where: { id: surplusTargetDebtId }
-          });
+        const targetDebt = await prisma.debt.findUnique({
+          where: { id: surplusTargetDebtId }
+        });
 
-          if (!targetDebt) {
-            throw new AppError('Deuda destino para el excedente no encontrada', 400);
-          }
-
-          if (targetDebt.status === 'PAID' || Number(targetDebt.remainingAmount) <= 0) {
-            throw new AppError('La deuda destino ya está completamente pagada', 400);
-          }
-
-          const targetRemaining = Number(targetDebt.remainingAmount);
-          const amountForTarget = Math.min(surplusAmount, targetRemaining);
-          appliedToTargetAmount = amountForTarget;
-
-          await prisma.debt.update({
-            where: { id: surplusTargetDebtId },
-            data: {
-              remainingAmount: Math.max(0, targetRemaining - amountForTarget),
-              status: targetRemaining - amountForTarget <= 0 ? 'PAID' : 'PENDING'
-            }
-          });
-
-          console.log(`✅ Excedente aplicado a deuda #${surplusTargetDebtId}: $${amountForTarget.toFixed(2)}`);
-
-          await supplierService.updateSupplierTotalDebt(targetDebt.supplierId, -amountForTarget);
-
-          const leftover = surplusAmount - amountForTarget;
-          if (leftover > 0) {
-            creditCreated = await prisma.credit.create({
-              data: {
-                paymentId: payment.id,
-                originDebtId: debtId,
-                supplierId,
-                amount: leftover,
-                remaining: leftover,
-                status: 'AVAILABLE',
-                description: `Excedente pago #${payment.id} - sobrante tras aplicar a deuda #${surplusTargetDebtId}`
-              }
-            });
-            console.log(`💳 Crédito creado por sobrante: $${leftover.toFixed(2)}`);
-          }
-        } else {
-          creditCreated = await prisma.credit.create({
-            data: {
-              paymentId: payment.id,
-              originDebtId: debtId,
-              supplierId,
-              amount: surplusAmount,
-              remaining: surplusAmount,
-              status: 'AVAILABLE',
-              description: `Excedente pago #${payment.id}`
-            }
-          });
-          console.log(`💳 Crédito creado para proveedor #${supplierId}: $${surplusAmount.toFixed(2)}`);
+        if (!targetDebt) {
+          throw new AppError('Deuda destino para el excedente no encontrada', 400);
         }
+
+        if (targetDebt.status === 'PAID' || Number(targetDebt.remainingAmount) <= 0) {
+          throw new AppError('La deuda destino ya está completamente pagada', 400);
+        }
+
+        const targetRemaining = Number(targetDebt.remainingAmount);
+        const amountForTarget = Math.min(surplusAmount, targetRemaining);
+        appliedToTargetAmount = amountForTarget;
+
+        await prisma.debt.update({
+          where: { id: surplusTargetDebtId },
+          data: {
+            remainingAmount: Math.max(0, targetRemaining - amountForTarget),
+            status: targetRemaining - amountForTarget <= 0 ? 'PAID' : 'PENDING'
+          }
+        });
+
+        console.log(`✅ Excedente aplicado a deuda #${surplusTargetDebtId}: $${amountForTarget.toFixed(2)}`);
+
+        await supplierService.updateSupplierTotalDebt(targetDebt.supplierId, -amountForTarget);
       }
 
       if (appliedToTargetAmount > 0 && surplusTargetDebtId) {
@@ -341,8 +309,22 @@ export class PaymentService {
         });
       }
 
+      // Reconciliar créditos del proveedor para evitar inconsistencias
+      console.log('🔄 Reconciliando créditos del proveedor...');
+      await creditService.reconcileSupplierCredits(supplierId);
+      console.log('✅ Créditos reconciliados');
+
       const names = getReceiptFileNames(payment);
       const receiptFilesUrls = buildReceiptUrls(payment.id, names);
+
+      // Buscar el crédito resultante asociado al pago o a la deuda de origen
+      const creditCreated = await prisma.credit.findFirst({
+        where: {
+          supplierId,
+          OR: [{ paymentId: payment.id }, { originDebtId: debtId }]
+        },
+        orderBy: { id: 'desc' }
+      });
 
       const response: PaymentResponse = {
         id: payment.id,
@@ -1449,12 +1431,12 @@ export class PaymentService {
             await debtService.updateDebtStatus(up.debtId, tx);
           }
 
-          await this.syncSurplusAfterPaymentEdit(tx, {
-            paymentId,
-            supplierId: up.supplierId,
-            debtId: up.debtId,
-            paymentAmount: Number(up.amount)
-          });
+          // Reconciliar créditos del proveedor afectado para evitar inconsistencias
+          console.log('🔄 Reconciliando créditos tras editar pago...');
+          await creditService.reconcileSupplierCredits(newSupplierId, tx);
+          if (oldSupplierId !== newSupplierId) {
+            await creditService.reconcileSupplierCredits(oldSupplierId, tx);
+          }
 
           const fresh = await tx.payment.findUnique({
             where: { id: paymentId },
@@ -1710,6 +1692,11 @@ export class PaymentService {
           totalDebt: true
         }
       });
+
+      // 6. Reconciliar créditos del proveedor
+      console.log('🔄 Reconciliando créditos tras eliminar pago...');
+      await creditService.reconcileSupplierCredits(supplierId);
+      console.log('✅ Créditos reconciliados');
 
       console.log('📊 Proveedor después de eliminar pago:', {
         supplierId,

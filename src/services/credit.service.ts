@@ -424,4 +424,152 @@ export class CreditService {
     }
     await tx.credit.deleteMany({ where: { paymentId } });
   }
+
+  /**
+   * Recalcula el crédito de una sola deuda basado en sus pagos activos y surplusAmountAtCreation.
+   * Crea un único crédito con el exceso real (si existe).
+   */
+  async recalculateCreditsForDebt(
+    debtId: number,
+    tx?: Prisma.TransactionClient
+  ): Promise<void> {
+    const client = tx ?? prisma;
+
+    const debt = await client.debt.findUnique({
+      where: { id: debtId },
+      include: {
+        payments: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'desc' }
+        }
+      }
+    });
+
+    if (!debt) return;
+
+    const totalPaid = debt.payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+    const surplus = Number(debt.surplusAmountAtCreation ?? 0);
+    const effectiveDebt = Number(debt.initialAmount) - surplus;
+    const realExcess = Math.max(0, totalPaid - effectiveDebt);
+
+    await client.credit.deleteMany({ where: { originDebtId: debtId } });
+
+    if (realExcess > 0 && debt.payments.length > 0) {
+      await client.credit.create({
+        data: {
+          supplierId: debt.supplierId,
+          originDebtId: debtId,
+          paymentId: debt.payments[0].id,
+          amount: realExcess,
+          remaining: realExcess,
+          status: 'AVAILABLE',
+          description: `Excedente de deuda #${debtId}`
+        }
+      });
+    }
+  }
+
+  /**
+   * Reconciliación completa de créditos para un proveedor.
+   * 1. Borra todos los créditos existentes.
+   * 2. Crea un crédito por cada deuda con exceso real > 0.
+   * 3. Consume los créditos en orden FIFO para cubrir los surplusAmountAtCreation.
+   *
+   * No modifica Debt.remainingAmount ni Debt.status; solo corrige la tabla Credit.
+   */
+  async reconcileSupplierCredits(
+    supplierId: number,
+    tx?: Prisma.TransactionClient
+  ): Promise<void> {
+    const client = tx ?? prisma;
+
+    const debts = await client.debt.findMany({
+      where: { supplierId },
+      include: {
+        payments: {
+          where: { deletedAt: null },
+          select: { id: true, amount: true },
+          orderBy: { createdAt: 'desc' }
+        }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    // Calcular exceso real por deuda
+    interface DebtCredit {
+      debtId: number;
+      amount: number;
+      paymentId: number;
+    }
+
+    const creditsToCreate: DebtCredit[] = [];
+    for (const debt of debts) {
+      const totalPaid = debt.payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+      const surplus = Number(debt.surplusAmountAtCreation ?? 0);
+      const effectiveDebt = Number(debt.initialAmount) - surplus;
+      const realExcess = Math.max(0, totalPaid - effectiveDebt);
+
+      if (realExcess > 0 && debt.payments.length > 0) {
+        creditsToCreate.push({
+          debtId: debt.id,
+          amount: Number(realExcess.toFixed(2)),
+          paymentId: debt.payments[0].id
+        });
+      }
+    }
+
+    // Borrar créditos existentes
+    await client.credit.deleteMany({ where: { supplierId } });
+
+    // Crear nuevos créditos
+    const createdCredits: { id: number; amount: number; remaining: number }[] = [];
+    for (const c of creditsToCreate) {
+      const created = await client.credit.create({
+        data: {
+          supplierId,
+          originDebtId: c.debtId,
+          paymentId: c.paymentId,
+          amount: c.amount,
+          remaining: c.amount,
+          status: 'AVAILABLE',
+          description: `Excedente reconciliado de deuda #${c.debtId}`
+        }
+      });
+      createdCredits.push({ id: created.id, amount: c.amount, remaining: c.amount });
+    }
+
+    // Consumir créditos FIFO para cubrir surplusAmountAtCreation
+    for (const debt of debts) {
+      if (debt.surplusAmountAtCreation === null || Number(debt.surplusAmountAtCreation) <= 0) {
+        continue;
+      }
+
+      let stillNeeded = Number(debt.surplusAmountAtCreation);
+      for (const credit of createdCredits) {
+        if (stillNeeded <= 0.001) break;
+        if (credit.remaining <= 0.001) continue;
+
+        const consume = Math.min(stillNeeded, credit.remaining);
+        credit.remaining -= consume;
+        stillNeeded -= consume;
+
+        await client.credit.update({
+          where: { id: credit.id },
+          data: {
+            remaining: credit.remaining,
+            status: credit.remaining <= 0.001 ? 'USED' : 'PARTIALLY_USED'
+          }
+        });
+      }
+
+      if (stillNeeded > 0.01) {
+        console.warn(
+          `⚠️ No hay créditos suficientes para cubrir el surplusAmountAtCreation ` +
+            `de la deuda #${debt.id}. Faltante: ${stillNeeded.toFixed(2)}. ` +
+            `Esta deuda fue creada con saldo excedente que ya no existe. ` +
+            `Revisa manualmente los pagos y los saldos excedentes del proveedor #${supplierId}.`
+        );
+      }
+    }
+  }
 }
