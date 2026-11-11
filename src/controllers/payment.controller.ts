@@ -6,6 +6,7 @@ import fs from 'fs';
 import prisma from '../config/database';
 import { getReceiptFileNames, parseReceiptFilenameFromUrl, buildReceiptUrl } from '../utils/receiptUrls';
 import { env } from '../config/env';
+import { brandingService } from '../services/branding.service';
 
 const paymentService = new PaymentService();
 
@@ -74,7 +75,13 @@ export class PaymentController {
         amountInBolivares: amountInBolivaresValue,
         cashierId,
         surplusAction: req.body.surplusAction as 'CREDIT' | 'APPLY_TO_DEBT' | undefined,
-        surplusTargetDebtId: req.body.surplusTargetDebtId ? parseInt(req.body.surplusTargetDebtId) : undefined
+        surplusTargetDebtId: req.body.surplusTargetDebtId ? parseInt(req.body.surplusTargetDebtId) : undefined,
+        destinationAccountId:
+          req.body.destinationAccountId !== undefined &&
+          req.body.destinationAccountId !== null &&
+          req.body.destinationAccountId !== ''
+            ? parseInt(req.body.destinationAccountId)
+            : undefined
       };
 
       // Múltiples imágenes: array de nombres y rutas (se construyen las URLs en el servicio)
@@ -483,8 +490,13 @@ export class PaymentController {
         month: 'short',
         day: 'numeric'
       });
+      const branding = await brandingService.getConfig().catch(() => null);
+      const companyName = branding?.companyName?.trim() || '';
+
       const title = `Comprobante de pago - ${payment.supplier.companyName}`;
-      const description = `Pago de $${amount} • ${date} • ${payment.supplier.companyName}`;
+      const description = companyName
+        ? `Pago de $${amount} • ${date} • ${payment.supplier.companyName} • ${companyName}`
+        : `Pago de $${amount} • ${date} • ${payment.supplier.companyName}`;
 
       const escapeHtml = (s: string) =>
         s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -492,6 +504,7 @@ export class PaymentController {
       const safeDescription = escapeHtml(description);
       const safeImageUrl = escapeHtml(firstImageUrl);
       const safePreviewUrl = escapeHtml(previewUrl);
+      const safeCompanyName = escapeHtml(companyName);
 
       const html = `<!DOCTYPE html>
 <html lang="es">
@@ -514,6 +527,7 @@ export class PaymentController {
   <meta name="twitter:image" content="${safeImageUrl}">
 </head>
 <body>
+  ${safeCompanyName ? `<p><strong>${safeCompanyName}</strong></p>` : ''}
   <p>Comprobante de pago</p>
   <p>${safeDescription}</p>
   <p><a href="${safeImageUrl}">Ver imagen del comprobante</a></p>
@@ -581,6 +595,14 @@ export class PaymentController {
       }
       if (req.body.amountInBolivares !== undefined) {
         updateData.amountInBolivares = req.body.amountInBolivares ? parseFloat(req.body.amountInBolivares) : null;
+      }
+      if (req.body.destinationAccountId !== undefined) {
+        updateData.destinationAccountId =
+          req.body.destinationAccountId !== null &&
+          req.body.destinationAccountId !== '' &&
+          req.body.destinationAccountId !== '0'
+            ? parseInt(req.body.destinationAccountId)
+            : null;
       }
 
       // Manejar comprobantes: archivos nuevos, remover todas, o conservar/actualizar lista (existingReceiptFiles = URLs)

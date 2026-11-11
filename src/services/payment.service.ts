@@ -15,6 +15,7 @@ import { SupplierService } from './supplier.service';
 import { CreditService } from './credit.service';
 import { env } from '../config/env';
 import { getReceiptFileNames, buildReceiptUrl, buildReceiptUrls } from '../utils/receiptUrls';
+import { brandingService } from './branding.service';
 
 // PaymentMethod type
 type PaymentMethod = 'ZELLE' | 'TRANSFER' | 'CASH';
@@ -132,6 +133,18 @@ export class PaymentService {
         }
       }
 
+      // Resolver la cuenta de pago del proveedor usada (se guarda como snapshot)
+      let destinationAccountSnapshot: any = null;
+      if (data.destinationAccountId) {
+        const account = await prisma.supplierPaymentAccount.findUnique({
+          where: { id: data.destinationAccountId }
+        });
+        if (!account || account.supplierId !== supplierId) {
+          throw new AppError('La cuenta de pago no existe o no pertenece al proveedor', 400);
+        }
+        destinationAccountSnapshot = this.buildAccountSnapshot(account);
+      }
+
       console.log('💾 Creando pago en BD...');
       
       // Construir la URL del comprobante si hay archivo
@@ -157,6 +170,7 @@ export class PaymentService {
           exchangeRate: exchangeRate ? exchangeRate : null,
           amountInBolivares: amountInBolivares ? amountInBolivares : null,
           surplusAmount: surplusAmount > 0 ? surplusAmount : null,
+          ...(destinationAccountSnapshot && { destinationAccountSnapshot }),
           verified: false,
           createdBy: effectiveCreatedBy
         },
@@ -345,6 +359,7 @@ export class PaymentService {
         exchangeRate: payment.exchangeRate ? Number(payment.exchangeRate) : null,
         amountInBolivares: payment.amountInBolivares ? Number(payment.amountInBolivares) : null,
         surplusAmount: surplusAmount > 0 ? surplusAmount : null,
+        destinationAccount: this.mapDestinationAccount(payment.destinationAccountSnapshot),
         createdBy: payment.createdBy,
         createdByUser: payment.createdByUser || null,
         createdAt: payment.createdAt,
@@ -455,6 +470,7 @@ export class PaymentService {
       exchangeRate: payment.exchangeRate ? Number(payment.exchangeRate) : null,
       amountInBolivares: payment.amountInBolivares ? Number(payment.amountInBolivares) : null,
       surplusAmount: payment.surplusAmount ? Number(payment.surplusAmount) : null,
+      destinationAccount: this.mapDestinationAccount(payment.destinationAccountSnapshot),
       createdBy: payment.createdBy,
       createdByUser: payment.createdByUser || null,
       deletedAt: payment.deletedAt || null,
@@ -580,6 +596,7 @@ export class PaymentService {
             exchangeRate: payment.exchangeRate ? Number(payment.exchangeRate) : null,
             amountInBolivares: payment.amountInBolivares ? Number(payment.amountInBolivares) : null,
             surplusAmount: payment.surplusAmount ? Number(payment.surplusAmount) : null,
+            destinationAccount: this.mapDestinationAccount(payment.destinationAccountSnapshot),
             createdBy: payment.createdBy,
             createdByUser: payment.createdByUser || null,
             deletedAt: payment.deletedAt || null,
@@ -757,6 +774,7 @@ export class PaymentService {
           exchangeRate: payment.exchangeRate ? Number(payment.exchangeRate) : null,
           amountInBolivares: payment.amountInBolivares ? Number(payment.amountInBolivares) : null,
           surplusAmount: payment.surplusAmount ? Number(payment.surplusAmount) : null,
+          destinationAccount: this.mapDestinationAccount(payment.destinationAccountSnapshot),
           createdBy: payment.createdBy,
           createdByUser: payment.createdByUser,
           deletedAt: payment.deletedAt || null,
@@ -871,6 +889,7 @@ export class PaymentService {
             exchangeRate: payment.exchangeRate ? Number(payment.exchangeRate) : null,
             amountInBolivares: payment.amountInBolivares ? Number(payment.amountInBolivares) : null,
             surplusAmount: payment.surplusAmount ? Number(payment.surplusAmount) : null,
+            destinationAccount: this.mapDestinationAccount(payment.destinationAccountSnapshot),
             createdBy: payment.createdBy,
             createdByUser: payment.createdByUser || null,
             deletedAt: payment.deletedAt || null,
@@ -967,6 +986,7 @@ export class PaymentService {
             exchangeRate: payment.exchangeRate ? Number(payment.exchangeRate) : null,
             amountInBolivares: payment.amountInBolivares ? Number(payment.amountInBolivares) : null,
             surplusAmount: payment.surplusAmount ? Number(payment.surplusAmount) : null,
+            destinationAccount: this.mapDestinationAccount(payment.destinationAccountSnapshot),
             createdBy: payment.createdBy,
             createdByUser: payment.createdByUser || null,
             deletedAt: payment.deletedAt || null,
@@ -1056,6 +1076,7 @@ export class PaymentService {
       exchangeRate: payment.exchangeRate ? Number(payment.exchangeRate) : null,
       amountInBolivares: payment.amountInBolivares ? Number(payment.amountInBolivares) : null,
       surplusAmount: payment.surplusAmount ? Number(payment.surplusAmount) : null,
+      destinationAccount: this.mapDestinationAccount(payment.destinationAccountSnapshot),
       createdBy: payment.createdBy,
       createdByUser: payment.createdByUser || null,
       deletedAt: payment.deletedAt || null,
@@ -1132,6 +1153,7 @@ export class PaymentService {
         exchangeRate: payment.exchangeRate ? Number(payment.exchangeRate) : null,
         amountInBolivares: payment.amountInBolivares ? Number(payment.amountInBolivares) : null,
         surplusAmount: payment.surplusAmount ? Number(payment.surplusAmount) : null,
+        destinationAccount: this.mapDestinationAccount(payment.destinationAccountSnapshot),
         createdBy: payment.createdBy,
         createdByUser: payment.createdByUser || null,
         deletedAt: payment.deletedAt || null,
@@ -1162,6 +1184,7 @@ export class PaymentService {
       exchangeRate?: number | null;
       amountInBolivares?: number | null;
       nota?: string | null;
+      destinationAccountId?: number | null;
     }
   ): Promise<PaymentResponse> {
     try {
@@ -1313,6 +1336,21 @@ export class PaymentService {
       if (data.exchangeRate !== undefined) updateData.exchangeRate = data.exchangeRate || null;
       if (data.amountInBolivares !== undefined) updateData.amountInBolivares = data.amountInBolivares || null;
       if (data.nota !== undefined) updateData.nota = data.nota || null;
+
+      // Cuenta de pago destino (se guarda como snapshot en el pago)
+      if (data.destinationAccountId !== undefined) {
+        if (data.destinationAccountId === null || data.destinationAccountId === 0) {
+          updateData.destinationAccountSnapshot = Prisma.DbNull;
+        } else {
+          const account = await prisma.supplierPaymentAccount.findUnique({
+            where: { id: data.destinationAccountId }
+          });
+          if (!account || account.supplierId !== newSupplierId) {
+            throw new AppError('La cuenta de pago no existe o no pertenece al proveedor', 400);
+          }
+          updateData.destinationAccountSnapshot = this.buildAccountSnapshot(account);
+        }
+      }
       
       // Manejar comprobantes: múltiples imágenes nuevas, remover todas, lista existente (URLs) o mantener actual
       if (data.receiptFileNames !== undefined) {
@@ -1545,6 +1583,7 @@ export class PaymentService {
         exchangeRate: updatedPayment.exchangeRate ? Number(updatedPayment.exchangeRate) : null,
         amountInBolivares: updatedPayment.amountInBolivares ? Number(updatedPayment.amountInBolivares) : null,
         surplusAmount: updatedPayment.surplusAmount ? Number(updatedPayment.surplusAmount) : null,
+        destinationAccount: this.mapDestinationAccount(updatedPayment.destinationAccountSnapshot),
         createdBy: updatedPayment.createdBy,
         createdByUser: updatedPayment.createdByUser || null,
         createdAt: updatedPayment.createdAt,
@@ -1725,6 +1764,7 @@ export class PaymentService {
         exchangeRate: deletedPayment.exchangeRate ? Number(deletedPayment.exchangeRate) : null,
         amountInBolivares: deletedPayment.amountInBolivares ? Number(deletedPayment.amountInBolivares) : null,
         surplusAmount: deletedPayment.surplusAmount ? Number(deletedPayment.surplusAmount) : null,
+        destinationAccount: this.mapDestinationAccount(deletedPayment.destinationAccountSnapshot),
         createdBy: deletedPayment.createdBy,
         createdByUser: deletedPayment.createdByUser || null,
         deletedAt: deletedPayment.deletedAt || null,
@@ -1842,6 +1882,9 @@ export class PaymentService {
       };
       const paymentMethodText = paymentMethodMap[updatedPayment.paymentMethod] || updatedPayment.paymentMethod;
 
+      const branding = await brandingService.getConfig().catch(() => null);
+      const companyName = branding?.companyName?.trim();
+
       let message = '';
       // Incluir primero las URLs directas de las imágenes del recibo para que WhatsApp las muestre como preview/foto en el chat (no como link de página)
       if (receiptFilesUrls.length > 0) {
@@ -1870,6 +1913,10 @@ export class PaymentService {
       
       if (updatedPayment.confirmationNumber) {
         message += `*Número de Confirmación:* ${updatedPayment.confirmationNumber}\n`;
+      }
+
+      if (companyName) {
+        message += `\n_${companyName}_\n`;
       }
 
       // Si hay comprobante, agregar la URL al mensaje
@@ -1909,6 +1956,7 @@ export class PaymentService {
         exchangeRate: updatedPayment.exchangeRate ? Number(updatedPayment.exchangeRate) : null,
         amountInBolivares: updatedPayment.amountInBolivares ? Number(updatedPayment.amountInBolivares) : null,
         surplusAmount: updatedPayment.surplusAmount ? Number(updatedPayment.surplusAmount) : null,
+        destinationAccount: this.mapDestinationAccount(updatedPayment.destinationAccountSnapshot),
         createdBy: updatedPayment.createdBy,
         createdByUser: updatedPayment.createdByUser || null,
         deletedAt: updatedPayment.deletedAt || null,
@@ -2003,6 +2051,49 @@ export class PaymentService {
         description: `Excedente pago #${paymentId}`
       }
     });
+  }
+
+  /** Copia los datos de una cuenta de pago para guardarlos en el pago (snapshot). */
+  private buildAccountSnapshot(account: {
+    id: number;
+    type: string;
+    bank: string | null;
+    accountNumber: string | null;
+    holderName: string | null;
+    holderId: string | null;
+    email: string | null;
+    phone: string | null;
+  }): Record<string, unknown> {
+    return {
+      id: account.id,
+      type: account.type,
+      bank: account.bank ?? null,
+      accountNumber: account.accountNumber ?? null,
+      holderName: account.holderName ?? null,
+      holderId: account.holderId ?? null,
+      email: account.email ?? null,
+      phone: account.phone ?? null
+    };
+  }
+
+  private mapDestinationAccount(snapshot: unknown): any {
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+      return null;
+    }
+    const account = snapshot as Record<string, any>;
+    if (!account.type) {
+      return null;
+    }
+    return {
+      id: account.id,
+      type: account.type,
+      bank: account.bank ?? null,
+      accountNumber: account.accountNumber ?? null,
+      holderName: account.holderName ?? null,
+      holderId: account.holderId ?? null,
+      email: account.email ?? null,
+      phone: account.phone ?? null
+    };
   }
 }
 

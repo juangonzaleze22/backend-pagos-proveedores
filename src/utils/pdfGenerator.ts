@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import { Writable } from 'stream';
+import { env } from '../config/env';
 import type { SupplierDetailedReport, PaymentMethod, DebtStatus } from '../types';
 
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -31,12 +32,97 @@ const COLORS = {
   warning: '#b7791f'
 };
 
-function getLogoPath(): string | null {
+export interface PdfBranding {
+  companyName?: string;
+  reportTitle?: string;
+  logoPath?: string | null;
+  primaryColor?: string;
+  accentColor?: string;
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  let value = hex.replace('#', '').trim();
+  if (value.length === 3) {
+    value = value.split('').map((c) => c + c).join('');
+  }
+  if (!/^[0-9a-fA-F]{6}$/.test(value)) return null;
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16)
+  };
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const toHex = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+/** Aclara un color hex mezclándolo con blanco (amount 0..1). */
+function lightenHex(hex: string, amount: number): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return rgbToHex(
+    rgb.r + (255 - rgb.r) * amount,
+    rgb.g + (255 - rgb.g) * amount,
+    rgb.b + (255 - rgb.b) * amount
+  );
+}
+
+/** Luminancia relativa (WCAG) para decidir texto claro u oscuro. */
+function relativeLuminance(hex: string): number {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const channel = (value: number) => {
+    const s = value / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+}
+
+/** Texto legible sobre un fondo de color: blanco si es oscuro, gris oscuro si es claro. */
+function contrastText(backgroundHex: string): string {
+  return relativeLuminance(backgroundHex) > 0.5 ? '#1f2937' : '#ffffff';
+}
+
+/** Si el color de marca es muy claro, usa un tono oscuro para textos sobre fondos blancos. */
+function readableOnLight(hex: string): string {
+  return relativeLuminance(hex) > 0.6 ? '#1f2937' : hex;
+}
+
+function resolveColors(branding?: PdfBranding) {
+  const primary = branding?.primaryColor || COLORS.primary;
+  const accent = branding?.accentColor || COLORS.accent;
+  const primaryLight = lightenHex(primary, 0.18);
+  return {
+    ...COLORS,
+    primary,
+    primaryLight,
+    accent,
+    primaryText: readableOnLight(primary),
+    onPrimary: contrastText(primary),
+    onPrimaryLight: contrastText(primaryLight),
+    onAccent: contrastText(accent)
+  };
+}
+
+function resolveUploadedLogo(logoPath?: string | null): string | null {
+  if (!logoPath) return null;
+  const relative = logoPath.replace(/^\/?uploads\//, '');
+  const diskPath = path.isAbsolute(logoPath) ? logoPath : path.join(env.UPLOAD_PATH, relative);
+  return fs.existsSync(diskPath) ? diskPath : null;
+}
+
+function getLogoPath(branding?: PdfBranding): string | null {
+  const uploaded = resolveUploadedLogo(branding?.logoPath);
+  if (uploaded) return uploaded;
+
   const candidates = [
+    path.join(__dirname, '..', 'assets', 'logo.png'),
+    path.join(process.cwd(), 'dist', 'assets', 'logo.png'),
     path.join(process.cwd(), 'src', 'assets', 'logo.png'),
     path.join(process.cwd(), 'assets', 'image', 'logo.png'),
-    path.join(process.cwd(), 'assets', 'logo.png'),
-    path.join(__dirname, '..', 'assets', 'logo.png')
+    path.join(process.cwd(), 'assets', 'logo.png')
   ];
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
@@ -79,8 +165,12 @@ function formatCurrency(amount: number): string {
  */
 export function generateSupplierPaymentsPdf(
   data: SupplierDetailedReport,
-  writeStream: Writable
+  writeStream: Writable,
+  branding?: PdfBranding
 ): void {
+  // Sombra la paleta global con los colores configurados por el cliente.
+  const COLORS = resolveColors(branding);
+
   const doc = new PDFDocument({ margin: 50, size: 'A4' });
   doc.pipe(writeStream);
 
@@ -90,33 +180,45 @@ export function generateSupplierPaymentsPdf(
   const contentWidth = pageWidth - margin * 2;
   const maxY = 750;
 
+  const companyName = branding?.companyName?.trim() || '';
+  const reportTitle = branding?.reportTitle?.trim() || 'Reporte de Pagos a Proveedor';
+
   // ========== ENCABEZADO CON LOGO ==========
-  const headerHeight = 52;
+  const headerHeight = 64;
   doc.fillColor(COLORS.headerBg).rect(0, 0, pageWidth, headerHeight).fill();
   doc.strokeColor(COLORS.border).lineWidth(0.5).moveTo(0, headerHeight).lineTo(pageWidth, headerHeight).stroke();
 
-  const logoPath = getLogoPath();
+  const logoPath = getLogoPath(branding);
   if (logoPath) {
     try {
-      doc.image(logoPath, margin, 10, { width: 90, height: 32 });
+      doc.image(logoPath, margin, 16, { width: 90, height: 32 });
     } catch {
       // Si falla la imagen, seguir sin logo
     }
   }
 
-  doc.fontSize(16).fillColor(COLORS.primary).font('Helvetica-Bold');
-  doc.text('Reporte de Pagos a Proveedor', logoPath ? margin + 100 : margin, 14, {
-    width: contentWidth - 100
-  });
-  doc.fontSize(9).fillColor(COLORS.textMuted).font('Helvetica');
-  doc.text(`Generado el ${formatDate(new Date())}`, logoPath ? margin + 100 : margin, 32, {
-    width: contentWidth - 100
-  });
+  const textX = logoPath ? margin + 100 : margin;
+  const textWidth = logoPath ? contentWidth - 100 : contentWidth;
+  const generatedAt = `Generado el ${formatDate(new Date())}`;
+
+  if (companyName) {
+    doc.fontSize(14).fillColor(COLORS.primaryText).font('Helvetica-Bold');
+    doc.text(companyName, textX, 12, { width: textWidth });
+    doc.fontSize(10).fillColor(COLORS.text).font('Helvetica-Bold');
+    doc.text(reportTitle, textX, 30, { width: textWidth });
+    doc.fontSize(8).fillColor(COLORS.textMuted).font('Helvetica');
+    doc.text(generatedAt, textX, 45, { width: textWidth });
+  } else {
+    doc.fontSize(16).fillColor(COLORS.primaryText).font('Helvetica-Bold');
+    doc.text(reportTitle, textX, 16, { width: textWidth });
+    doc.fontSize(9).fillColor(COLORS.textMuted).font('Helvetica');
+    doc.text(generatedAt, textX, 38, { width: textWidth });
+  }
 
   doc.y = headerHeight + 22;
 
   // ========== INFORMACIÓN DEL PROVEEDOR (caja con fondo) ==========
-  doc.fontSize(11).fillColor(COLORS.primary).font('Helvetica-Bold');
+  doc.fontSize(11).fillColor(COLORS.primaryText).font('Helvetica-Bold');
   doc.text('Datos del proveedor', margin, doc.y);
   doc.moveDown(0.4);
   const boxStartY = doc.y;
@@ -130,14 +232,14 @@ export function generateSupplierPaymentsPdf(
   doc.text(`Teléfono: ${supplier.phone ?? 'N/A'}  |  Email: ${supplier.email ?? 'N/A'}`, margin + 12, boxInnerY + 28, {
     width: contentWidth - 24
   });
-  doc.font('Helvetica-Bold').fillColor(COLORS.primary);
+  doc.font('Helvetica-Bold').fillColor(COLORS.primaryText);
   doc.text(`Deuda total actual: USD ${formatCurrency(supplier.totalDebt)}`, margin + 12, boxInnerY + 44, {
     width: contentWidth - 24
   });
   doc.y = boxStartY + boxHeight + 18;
 
   // ========== RESUMEN DEL PERIODO (2 bloques visuales) ==========
-  doc.fontSize(11).fillColor(COLORS.primary).font('Helvetica-Bold');
+  doc.fontSize(11).fillColor(COLORS.primaryText).font('Helvetica-Bold');
   doc.text('Resumen del periodo', margin, doc.y);
   doc.moveDown(0.5);
 
@@ -147,7 +249,7 @@ export function generateSupplierPaymentsPdf(
   const cardY = doc.y;
 
   doc.fillColor(COLORS.primaryLight).rect(margin, cardY, cardWidth, cardHeight).fill();
-  doc.fillColor('#fff').font('Helvetica').fontSize(8).text('Total pagado (USD)', margin + 8, cardY + 7, {
+  doc.fillColor(COLORS.onPrimaryLight).font('Helvetica').fontSize(8).text('Total pagado (USD)', margin + 8, cardY + 7, {
     width: cardWidth - 16
   });
   doc.font('Helvetica-Bold').fontSize(13).text(formatCurrency(totalPaid), margin + 8, cardY + 22, {
@@ -156,7 +258,7 @@ export function generateSupplierPaymentsPdf(
 
   const card2X = margin + cardWidth + cardGap;
   doc.fillColor(COLORS.accent).rect(card2X, cardY, cardWidth, cardHeight).fill();
-  doc.fillColor('#fff').font('Helvetica').fontSize(8).text('Cantidad de pagos', card2X + 8, cardY + 7, {
+  doc.fillColor(COLORS.onAccent).font('Helvetica').fontSize(8).text('Cantidad de pagos', card2X + 8, cardY + 7, {
     width: cardWidth - 16
   });
   doc.font('Helvetica-Bold').fontSize(13).text(String(paymentCount), card2X + 8, cardY + 22, {
@@ -192,7 +294,7 @@ export function generateSupplierPaymentsPdf(
 
     // ---------- Título: Detalle de pagos de {{deuda}} ----------
     if (doc.y + 100 > maxY) doc.addPage();
-    doc.fontSize(11).fillColor(COLORS.primary).font('Helvetica-Bold');
+    doc.fontSize(11).fillColor(COLORS.primaryText).font('Helvetica-Bold');
     doc.text(`Detalle de pagos de ${debtLabel}`, margin, doc.y);
     doc.moveDown(0.4);
 
@@ -200,7 +302,7 @@ export function generateSupplierPaymentsPdf(
     const headerY = doc.y;
     doc.fillColor(COLORS.headerBg).rect(tableLeft, headerY, contentWidth, rowH).fill();
     doc.strokeColor(COLORS.border).rect(tableLeft, headerY, contentWidth, rowH).stroke();
-    doc.fontSize(8).fillColor(COLORS.primary).font('Helvetica-Bold');
+    doc.fontSize(8).fillColor(COLORS.primaryText).font('Helvetica-Bold');
     let x = tableLeft + 6;
     doc.text('Fecha', x, headerY + 5, { width: colWidths.fecha }); x += colWidths.fecha;
     doc.text('Hora', x, headerY + 5, { width: colWidths.hora }); x += colWidths.hora;
@@ -262,7 +364,7 @@ export function generateSupplierPaymentsPdf(
     if (doc.y + footerH > maxY) doc.addPage();
     const footerY = doc.y;
     doc.fillColor(COLORS.primaryLight).rect(margin, footerY, contentWidth, footerTitleH).fill();
-    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(8);
+    doc.fillColor(COLORS.onPrimaryLight).font('Helvetica-Bold').fontSize(8);
     doc.text('Resumen de la deuda', margin + bodyPadH, footerY + 4, { width: contentWidth - bodyPadH * 2 });
     doc.fillColor(COLORS.boxBg).rect(margin, footerY + footerTitleH, contentWidth, footerBodyH).fill();
     doc.strokeColor(COLORS.border).lineWidth(0.5).rect(margin, footerY, contentWidth, footerH).stroke();
@@ -297,12 +399,21 @@ export function generateSupplierPaymentsPdf(
   }
 
   if (debts.length === 0) {
-    doc.fontSize(11).fillColor(COLORS.primary).font('Helvetica-Bold');
+    doc.fontSize(11).fillColor(COLORS.primaryText).font('Helvetica-Bold');
     doc.text('Detalle de pagos', margin, doc.y);
     doc.moveDown(0.4);
     doc.font('Helvetica').fillColor(COLORS.textMuted).fontSize(9);
     doc.text('No hay deudas registradas para este proveedor.', margin, doc.y);
     doc.moveDown(0.5);
+  }
+
+  if (companyName) {
+    doc.moveDown(1);
+    doc.fontSize(8).fillColor(COLORS.textMuted).font('Helvetica');
+    doc.text(`${companyName} · ${generatedAt}`, margin, doc.y, {
+      width: contentWidth,
+      align: 'center'
+    });
   }
 
   doc.end();

@@ -32,16 +32,17 @@ Ese script hace:
 
 ---
 
-## Si usas **build** completo (`npm run build`) en local
+## `npm run build` vs `npm run build:local`
 
-En local, `npm run build` hace:
+- **`npm run build`** (y su alias `build:deploy`): NO toca la base de datos. Es el que debe ejecutar Hostinger. Hace:
+  1. Borra `dist`
+  2. `prisma generate`
+  3. `tsc` – compila a `dist/`
+  4. Copia assets
 
-1. Borra `dist`
-2. `prisma generate`
-3. **`prisma db push`** – sincroniza el schema con la base de datos (requiere `DATABASE_URL` en `.env`)
-4. `tsc` – compila a `dist/`
+  Funciona aunque `DATABASE_URL` no exista durante el build (Hostinger inyecta las variables solo al arrancar el proceso Node).
 
-En Hostinger es mejor usar **`build:deploy`** para evitar que el build falle por falta de `DATABASE_URL` durante el despliegue.
+- **`npm run build:local`**: incluye **`prisma db push`** y requiere `DATABASE_URL` en `.env`. Úsalo solo en tu PC o donde tengas la BD accesible. No lo uses como Build command en Hostinger.
 
 ---
 
@@ -82,6 +83,7 @@ Solo se ejecuta:
 
 ## Resumen
 
-- **Al crear/instanciar el proyecto:** solo corre lo que configures (normalmente `npm start`). No se ejecutan migraciones ni `db push` en el arranque.
-- **Las “migraciones” (schema aplicado a la BD)** se aplican en el **build** con `prisma db push`, y solo si el build puede conectarse a la BD.
-- **Si algo falla por tablas o campos:** la BD no está sincronizada con `schema.prisma`. Hay que ejecutar `prisma db push` (o migraciones) donde sí tengas `DATABASE_URL` y acceso a la BD.
+- **El build no toca la BD.** `npm run build` / `build:deploy` solo generan Prisma Client y compilan TypeScript. Las variables del panel no están disponibles en el build, por eso no debe haber `db push` ahí.
+- **Las “migraciones” (schema aplicado a la BD)** se aplican en **runtime** con `prisma db push`, habilitado por `RUN_DB_PUSH_ON_START=true`, donde sí existen las variables de entorno.
+- **Si algo falla por tablas o campos:** revisa que `RUN_DB_PUSH_ON_START=true` esté definido y mira en los logs las líneas `[DB_PUSH]` / `[BOOT]` del arranque.
+- **En local**, usa `npm run build:local` si quieres que el build aplique el schema.

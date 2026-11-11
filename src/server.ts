@@ -28,22 +28,43 @@ console.log('PORT ==>>', PORT);
 // Actívalo en el panel: RUN_DB_PUSH_ON_START = true
 // Usa node + ruta a prisma CLI (en Hostinger npx no suele estar en el PATH del proceso).
 function runDbPushIfEnabled() {
-  if (process.env.RUN_DB_PUSH_ON_START !== 'true') return;
+  if (process.env.RUN_DB_PUSH_ON_START !== 'true') {
+    console.log('[DB_PUSH] Omitido (RUN_DB_PUSH_ON_START != "true").');
+    return;
+  }
+
+  const fs = require('fs') as typeof import('fs');
   const projectRoot = path.resolve(__dirname, '..');
-  const prismaCli = path.join(projectRoot, 'node_modules', 'prisma', 'build', 'index.js');
-  const fs = require('fs');
+  const schemaPath = path.join(projectRoot, 'prisma', 'schema.prisma');
+
+  let prismaCli = path.join(projectRoot, 'node_modules', 'prisma', 'build', 'index.js');
+  try {
+    prismaCli = require.resolve('prisma/build/index.js', { paths: [projectRoot] });
+  } catch {
+    // Fallback a la ruta del monorepo/proyecto.
+  }
+
   if (!fs.existsSync(prismaCli)) {
     console.warn('⚠️ Prisma CLI no encontrado en', prismaCli, '- se omite db push.');
     return;
   }
+  if (!fs.existsSync(schemaPath)) {
+    console.warn('⚠️ schema.prisma no encontrado en', schemaPath, '- se omite db push.');
+    return;
+  }
+
   console.log('🔄 Sincronizando schema con la BD (prisma db push)...');
+  console.log(`[DB_PUSH] cwd=${projectRoot} schema=${schemaPath}`);
   try {
     const node = process.execPath;
-    const out = execSync(`"${node}" "${prismaCli}" db push --skip-generate`, {
-      cwd: projectRoot,
-      encoding: 'utf8',
-      env: process.env,
-    });
+    const out = execSync(
+      `"${node}" "${prismaCli}" db push --skip-generate --schema "${schemaPath}"`,
+      {
+        cwd: projectRoot,
+        encoding: 'utf8',
+        env: process.env,
+      }
+    );
     if (out) console.log(out);
     console.log('✅ Schema sincronizado.');
   } catch (e: any) {

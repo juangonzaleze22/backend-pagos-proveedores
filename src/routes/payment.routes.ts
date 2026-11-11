@@ -4,6 +4,7 @@ import { authenticate, authorize } from '../middleware/auth.middleware';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validation.middleware';
 import { uploadMultiple, handleMulterError } from '../config/multer';
+import { optimizeUploadedImages } from '../middleware/image-optimizer.middleware';
 
 const router = Router();
 const paymentController = new PaymentController();
@@ -79,6 +80,7 @@ router.post(
   },
   uploadMultiple('receipt', 10), // Campo FormData 'receipt' - hasta 10 imágenes
   handleMulterError,
+  optimizeUploadedImages({ maxWidth: 1920, maxHeight: 1920, quality: 80 }),
   // Middleware después de Multer para ver qué se recibió
   (req: Request, res: Response, next: NextFunction) => {
     console.log('📥 Después de Multer');
@@ -178,6 +180,15 @@ router.post(
         }
       }
       return true;
+    }),
+    body('destinationAccountId').optional().custom((value) => {
+      if (value !== undefined && value !== null && value !== '') {
+        const num = parseInt(value);
+        if (isNaN(num) || num <= 0) {
+          throw new Error('ID de cuenta de pago inválido');
+        }
+      }
+      return true;
     })
   ]),
   authorize('ADMINISTRADOR', 'SUPERVISOR', 'CAJERO'),
@@ -224,6 +235,7 @@ router.put(
   '/:id',
   uploadMultiple('receipt', 10), // Opcional: hasta 10 imágenes para actualizar comprobantes
   handleMulterError,
+  optimizeUploadedImages({ maxWidth: 1920, maxHeight: 1920, quality: 80 }),
   validate([
     param('id').isInt().withMessage('ID inválido'),
     body('amount').optional().custom((value) => {
@@ -294,6 +306,15 @@ router.put(
         }
         if (num <= 0) {
           throw new Error('El monto en bolívares debe ser mayor a 0');
+        }
+      }
+      return true;
+    }),
+    body('destinationAccountId').optional().custom((value) => {
+      if (value !== undefined && value !== null && value !== '') {
+        const num = parseInt(value);
+        if (isNaN(num) || num < 0) {
+          throw new Error('ID de cuenta de pago inválido');
         }
       }
       return true;

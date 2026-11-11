@@ -20,7 +20,8 @@ router.post(
       return typeof value === 'string';
     }).withMessage('El email o identificador debe ser texto'),
     body('phone').optional().trim().isString().withMessage('El teléfono debe ser una cadena de texto'),
-    body('title').optional().trim().isString().withMessage('El título de la deuda debe ser un texto')
+    body('title').optional().trim().isString().withMessage('El título de la deuda debe ser un texto'),
+    body('paymentAccounts').optional().isArray().withMessage('paymentAccounts debe ser un arreglo')
   ]),
   authorize('ADMINISTRADOR', 'SUPERVISOR'),
   supplierController.create.bind(supplierController)
@@ -52,7 +53,8 @@ router.put(
       if (value === null || value === undefined || value === '') return true;
       return typeof value === 'string';
     }).withMessage('El teléfono debe ser una cadena de texto'),
-    body('status').optional().isIn(['PENDING', 'COMPLETED']).withMessage('El estado debe ser PENDING o COMPLETED')
+    body('status').optional().isIn(['PENDING', 'COMPLETED']).withMessage('El estado debe ser PENDING o COMPLETED'),
+    body('paymentAccounts').optional().isArray().withMessage('paymentAccounts debe ser un arreglo')
   ]),
   authorize('ADMINISTRADOR', 'SUPERVISOR'),
   supplierController.update.bind(supplierController)

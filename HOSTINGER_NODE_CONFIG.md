@@ -6,13 +6,13 @@
 |-------|--------|
 | **Package manager** | **npm** (no yarn ni pnpm) |
 | **Node version** | **18** o **20** (recomendado **20** LTS). En el panel de Hostinger elige Node 20 si está disponible. |
-| **Build command** | `npm run build:deploy` (recomendado) o `npm run build` si tienes `DATABASE_URL` en el panel antes del build. |
+| **Build command** | `npm run build` (o su alias `build:deploy`). Ninguno toca la base de datos. |
 | **Output Directory** | **`dist`** |
 | **Entry file** | **`dist/server.js`** |
 | **Application root** | `public_html` (o la carpeta donde está el proyecto), **sin** `/` al final. |
 
-- **`build:deploy`**: solo ejecuta `prisma generate` y `tsc` (no necesita base de datos durante el build). Las tablas se crean/actualizan al arrancar si configuras `RUN_DB_PUSH_ON_START=true`.
-- **`build`**: ejecuta además `prisma db push`; requiere `DATABASE_URL` definida en el panel antes del build.
+- **`build` / `build:deploy`**: solo ejecutan `prisma generate` y `tsc` (no necesitan base de datos durante el build). Las tablas se crean/actualizan al arrancar si configuras `RUN_DB_PUSH_ON_START=true`.
+- **`build:local`**: ejecuta además `prisma db push`; requiere `DATABASE_URL` en `.env`. Úsalo solo en local, nunca como Build command en Hostinger.
 
 ---
 
@@ -97,7 +97,7 @@ Si tu plan de Hostinger permite **Variables de entorno** en la configuración de
 
 1. **Package manager**: **npm**.
 2. **Node version**: **18** o **20** (recomendado **20**).
-3. **Build command**: **`npm run build:deploy`** (evita fallos si no hay `DATABASE_URL` en el build).
+3. **Build command**: **`npm run build`** (no toca la BD; las variables llegan en runtime).
 4. **Output Directory**: **`dist`**.
 5. **Application root**: carpeta del proyecto, **sin** `/` al final (ej: `public_html`).
 6. **Entry file**: **`dist/server.js`**, **sin** `/` al inicio.

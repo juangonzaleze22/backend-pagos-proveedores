@@ -3,14 +3,31 @@ import { OrderController } from '../controllers/order.controller';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validation.middleware';
+import { uploadInvoiceMultiple, handleMulterError } from '../config/multer';
+import { optimizeUploadedImages } from '../middleware/image-optimizer.middleware';
 
 const router = Router();
 const orderController = new OrderController();
+
+// Endpoint PÚBLICO para servir facturas de pedidos (sin auth, para <img>)
+router.get(
+  '/:id/invoice/:filename',
+  validate([param('id').isInt().withMessage('ID inválido')]),
+  orderController.getInvoice.bind(orderController)
+);
+router.get(
+  '/:id/invoice',
+  validate([param('id').isInt().withMessage('ID inválido')]),
+  orderController.getInvoice.bind(orderController)
+);
 
 router.use(authenticate);
 
 router.post(
   '/',
+  uploadInvoiceMultiple('invoiceFiles', 2),
+  handleMulterError,
+  optimizeUploadedImages({ maxWidth: 1920, maxHeight: 1920, quality: 80 }),
   validate([
     body('supplierId').isInt().withMessage('ID de proveedor inválido'),
     body('amount').isFloat({ min: 0.01 }).withMessage('El monto debe ser mayor a 0'),
@@ -46,8 +63,12 @@ router.get(
 
 router.put(
   '/:id',
+  uploadInvoiceMultiple('invoiceFiles', 2),
+  handleMulterError,
+  optimizeUploadedImages({ maxWidth: 1920, maxHeight: 1920, quality: 80 }),
   validate([
     param('id').isInt().withMessage('ID inválido'),
+    body('removeInvoice').optional().isBoolean().withMessage('removeInvoice debe ser un booleano'),
     body('dispatchDate').optional().custom((value) => {
       if (value !== undefined && value !== null && value !== '') {
         const date = new Date(value);
@@ -84,10 +105,12 @@ router.put(
         value.creditDays !== undefined ||
         value.amount !== undefined ||
         value.title !== undefined ||
-        value.surplusAmountToApply !== undefined;
+        value.surplusAmountToApply !== undefined ||
+        value.removeInvoice !== undefined ||
+        value.existingInvoiceFiles !== undefined;
       if (!hasField) {
         throw new Error(
-          'Debe proporcionar al menos dispatchDate, creditDays, amount, title o surplusAmountToApply para actualizar'
+          'Debe proporcionar al menos dispatchDate, creditDays, amount, title, surplusAmountToApply o datos de facturas para actualizar'
         );
       }
       return true;

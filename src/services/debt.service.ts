@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { DebtResponse, SearchParams, PaginationParams, PaginatedResponse } from '../types';
 import { AppError } from '../middleware/error.middleware';
 import { getReceiptFileNames, buildReceiptUrls } from '../utils/receiptUrls';
+import { getInvoiceFileNames, buildInvoiceUrls } from '../utils/invoiceUrls';
 
 export class DebtService {
   async updateDebtStatus(debtId: number, tx?: Prisma.TransactionClient): Promise<void> {
@@ -112,6 +113,11 @@ export class DebtService {
             phone: true
           }
         },
+        order: {
+          select: {
+            invoiceFiles: true
+          }
+        },
         payments: {
           where: {
             deletedAt: null // Excluir pagos eliminados por defecto
@@ -165,6 +171,7 @@ export class DebtService {
       createdAt: debt.createdAt,
       updatedAt: debt.updatedAt,
       debtNumber,
+      invoiceFiles: buildInvoiceUrls(debt.orderId, getInvoiceFileNames((debt as any).order)),
       payments: debt.payments.map((p: any) => ({
         id: p.id,
         debtId: p.debtId,
@@ -240,6 +247,11 @@ export class DebtService {
               phone: true
             }
           },
+          order: {
+            select: {
+              invoiceFiles: true
+            }
+          },
           payments: {
             where: params?.includeDeletedPayments ? {} : {
               deletedAt: null // Excluir pagos eliminados por defecto
@@ -311,6 +323,7 @@ export class DebtService {
           createdAt: debt.createdAt,
           updatedAt: debt.updatedAt,
           debtNumber,
+          invoiceFiles: buildInvoiceUrls(debt.orderId, getInvoiceFileNames(debt.order)),
           payments: debt.payments.map((p: any) => ({
             id: p.id,
             debtId: p.debtId,

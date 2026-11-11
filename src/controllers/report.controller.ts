@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { ReportService } from '../services/report.service';
 import { AppError } from '../middleware/error.middleware';
 import { generateSupplierPaymentsPdf } from '../utils/pdfGenerator';
+import { brandingService } from '../services/branding.service';
 
 const reportService = new ReportService();
 
@@ -88,13 +89,21 @@ export class ReportController {
         endDate
       );
 
+      const branding = await brandingService.getConfig().catch(() => null);
+
       const safeName = data.supplier.companyName.replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '-') || 'proveedor';
       const filename = `reporte-pagos-${safeName}.pdf`;
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-      generateSupplierPaymentsPdf(data, res);
+      generateSupplierPaymentsPdf(data, res, {
+        companyName: branding?.companyName,
+        reportTitle: branding?.reportTitle,
+        logoPath: branding?.logoPath,
+        primaryColor: branding?.primaryColor,
+        accentColor: branding?.accentColor,
+      });
     } catch (error: any) {
       next(error);
     }

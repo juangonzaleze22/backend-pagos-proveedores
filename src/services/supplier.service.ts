@@ -6,7 +6,9 @@ import {
   SupplierResponse,
   SearchParams,
   PaginationParams,
-  PaginatedResponse
+  PaginatedResponse,
+  SupplierPaymentAccountInput,
+  SupplierPaymentAccountResponse
 } from '../types';
 import type { SupplierStatus } from '../types';
 import { AppError } from '../middleware/error.middleware';
@@ -30,6 +32,8 @@ export class SupplierService {
       ? parseFloat(initialDebtAmount) 
       : (initialDebtAmount || 0);
 
+    const paymentAccounts = this.normalizePaymentAccounts(data.paymentAccounts);
+
     // Crear proveedor
     // El status se calculará dinámicamente basado en totalDebt
     // Si tiene deuda inicial, será PENDING, si no, COMPLETED
@@ -41,8 +45,12 @@ export class SupplierService {
         email: email?.trim() || null,
         phone,
         status: (status as SupplierStatus) || initialStatus,
-        totalDebt: debtAmount
-      }
+        totalDebt: debtAmount,
+        ...(paymentAccounts.length > 0 && {
+          paymentAccounts: { create: paymentAccounts }
+        })
+      },
+      include: { paymentAccounts: true }
     });
 
     // Si hay deuda inicial, crear pedido y deuda
@@ -82,7 +90,8 @@ export class SupplierService {
 
   async getSupplierById(id: number): Promise<SupplierResponse | null> {
     const supplier = await prisma.supplier.findUnique({
-      where: { id }
+      where: { id },
+      include: { paymentAccounts: true }
     });
 
     if (!supplier) {
@@ -125,6 +134,7 @@ export class SupplierService {
 
     const suppliers = await prisma.supplier.findMany({
       where,
+      include: { paymentAccounts: true },
       orderBy: {
         companyName: 'asc'
       }
@@ -144,12 +154,19 @@ export class SupplierService {
 
   async updateSupplier(id: number, data: UpdateSupplierDTO): Promise<SupplierResponse> {
     const supplier = await prisma.supplier.findUnique({
-      where: { id }
+      where: { id },
+      include: { paymentAccounts: true }
     });
 
     if (!supplier) {
       throw new AppError('Proveedor no encontrado', 404);
     }
+
+    const normalizedAccounts = data.paymentAccounts !== undefined
+      ? this.normalizePaymentAccounts(data.paymentAccounts)
+      : undefined;
+    const accountsChanged = normalizedAccounts !== undefined &&
+      !this.arePaymentAccountsEqual(normalizedAccounts, supplier.paymentAccounts);
 
     // Validar que al menos un campo se esté actualizando
     const hasChanges = 
@@ -157,7 +174,8 @@ export class SupplierService {
       (data.taxId !== undefined && data.taxId !== supplier.taxId) ||
       (data.email !== undefined && (data.email?.trim() ?? null) !== (supplier.email ?? null)) ||
       (data.phone !== undefined && data.phone !== supplier.phone) ||
-      (data.status !== undefined && data.status !== supplier.status);
+      (data.status !== undefined && data.status !== supplier.status) ||
+      accountsChanged;
 
     if (!hasChanges) {
       throw new AppError('No se han realizado cambios en el proveedor', 400);
@@ -207,9 +225,21 @@ export class SupplierService {
       updateData.status = data.status;
     }
 
-    const updated = await prisma.supplier.update({
-      where: { id },
-      data: updateData
+    const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      if (normalizedAccounts !== undefined) {
+        await tx.supplierPaymentAccount.deleteMany({ where: { supplierId: id } });
+        if (normalizedAccounts.length > 0) {
+          await tx.supplierPaymentAccount.createMany({
+            data: normalizedAccounts.map((account) => ({ ...account, supplierId: id }))
+          });
+        }
+      }
+
+      return tx.supplier.update({
+        where: { id },
+        data: updateData,
+        include: { paymentAccounts: true }
+      });
     });
 
     return this.mapToResponse(updated);
@@ -285,6 +315,79 @@ export class SupplierService {
     }
   }
 
+  private normalizePaymentAccounts(
+    accounts?: SupplierPaymentAccountInput[]
+  ): SupplierPaymentAccountInput[] {
+    if (!accounts || !Array.isArray(accounts)) {
+      return [];
+    }
+
+    const validTypes = new Set(['PAGO_MOVIL', 'ZELLE', 'TRANSFER']);
+    return accounts
+      .filter((account) => account && validTypes.has(account.type))
+      .map((account) => ({
+        type: account.type,
+        bank: this.cleanOptional(account.bank),
+        accountNumber: this.cleanOptional(account.accountNumber),
+        holderName: this.cleanOptional(account.holderName),
+        holderId: this.cleanOptional(account.holderId),
+        email: this.cleanOptional(account.email),
+        phone: this.cleanOptional(account.phone)
+      }))
+      .filter((account) =>
+        account.bank ||
+        account.accountNumber ||
+        account.holderName ||
+        account.holderId ||
+        account.email ||
+        account.phone
+      );
+  }
+
+  private cleanOptional(value?: string | null): string | null {
+    const trimmed = (value ?? '').toString().trim();
+    return trimmed === '' ? null : trimmed;
+  }
+
+  private arePaymentAccountsEqual(
+    inputAccounts: SupplierPaymentAccountInput[],
+    existingAccounts: any[]
+  ): boolean {
+    const sortFn = (a: any, b: any) => {
+      const typeCompare = String(a.type).localeCompare(String(b.type));
+      if (typeCompare !== 0) return typeCompare;
+      return String(a.accountNumber ?? a.email ?? a.phone ?? '').localeCompare(
+        String(b.accountNumber ?? b.email ?? b.phone ?? '')
+      );
+    };
+
+    const a = [...inputAccounts].sort(sortFn);
+    const b = (existingAccounts || []).map((account) => ({
+      type: account.type,
+      bank: account.bank ?? null,
+      accountNumber: account.accountNumber ?? null,
+      holderName: account.holderName ?? null,
+      holderId: account.holderId ?? null,
+      email: account.email ?? null,
+      phone: account.phone ?? null
+    })).sort(sortFn);
+
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  private mapPaymentAccount(account: any): SupplierPaymentAccountResponse {
+    return {
+      id: account.id,
+      type: account.type,
+      bank: account.bank ?? null,
+      accountNumber: account.accountNumber ?? null,
+      holderName: account.holderName ?? null,
+      holderId: account.holderId ?? null,
+      email: account.email ?? null,
+      phone: account.phone ?? null
+    };
+  }
+
   private mapToResponse(supplier: any): SupplierResponse {
     return {
       id: supplier.id,
@@ -295,6 +398,9 @@ export class SupplierService {
       status: supplier.status,
       totalDebt: Number(supplier.totalDebt),
       lastPaymentDate: supplier.lastPaymentDate,
+      paymentAccounts: (supplier.paymentAccounts || []).map((account: any) =>
+        this.mapPaymentAccount(account)
+      ),
       createdAt: supplier.createdAt,
       updatedAt: supplier.updatedAt
     };

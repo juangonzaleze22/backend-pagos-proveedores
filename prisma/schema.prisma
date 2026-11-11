@@ -63,8 +63,34 @@ model Supplier {
   debts           Debt[]
   payments        Payment[]
   credits         Credit[]
+  paymentAccounts SupplierPaymentAccount[]
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+}
+
+enum SupplierPaymentMethodType {
+  PAGO_MOVIL
+  ZELLE
+  TRANSFER
+}
+
+/// Cuentas/datos de pago que el distribuidor usa para recibir pagos.
+/// Ej.: Pago Móvil (banco, teléfono, cédula), Zelle (email/ID) o Transferencia (banco, cuenta).
+model SupplierPaymentAccount {
+  id            Int                       @id @default(autoincrement())
+  supplierId    Int
+  supplier      Supplier                  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  type          SupplierPaymentMethodType
+  bank          String?
+  accountNumber String?
+  holderName    String?
+  holderId      String?
+  email         String?
+  phone         String?
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+
+  @@index([supplierId])
 }
 
 model Order {
@@ -77,6 +103,7 @@ model Order {
   dueDate      DateTime
   createdBy    Int
   createdByUser Usuario @relation("OrderCreator", fields: [createdBy], references: [id])
+  invoiceFiles Json?    // array de nombres de archivo de facturas (máx. 2)
   debt         Debt?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -116,6 +143,9 @@ model Payment {
   nota              String?
   receiptFile       String?       // legacy: una sola imagen (mantener por compatibilidad)
   receiptFiles      Json?        // array de nombres de archivo para múltiples imágenes
+  /// Copia de los datos de la cuenta del proveedor usada para este pago.
+  /// Se guarda como snapshot para conservar el historial aunque la cuenta se edite/elimine.
+  destinationAccountSnapshot Json?
   verified          Boolean       @default(false)
   shared            Boolean       @default(false)
   sharedAt         DateTime?
@@ -150,5 +180,24 @@ model Credit {
   supplier     Supplier @relation(fields: [supplierId], references: [id])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+/// Configuración visual de marca (fila única). Permite personalizar el sistema
+/// por cliente sin recompilar: colores, logos, favicon y textos.
+model BrandingConfig {
+  id             Int      @id @default(autoincrement())
+  appName        String   @default("Gestión de Pagos")
+  companyName    String   @default("Mi Empresa")
+  loginTitle     String   @default("Gestión de Pagos")
+  loginSubtitle  String   @default("Bienvenido al portal corporativo")
+  footerText     String?
+  reportTitle    String   @default("Reporte de Pagos a Proveedor")
+  logoPath       String?
+  faviconPath    String?
+  primaryColor   String   @default("#3b82f6")
+  accentColor    String   @default("#2563eb")
+  updatedBy      Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 

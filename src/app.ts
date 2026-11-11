@@ -1,8 +1,10 @@
 import express, { Application } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import path from 'path';
 import { logger } from './utils/logger';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
+import { env } from './config/env';
 import routes from './routes';
 
 const app: Application = express();
@@ -25,6 +27,9 @@ app.use(helmet({
 // Body parser (solo para JSON, FormData lo maneja Multer)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Archivos subidos (comprobantes e imágenes de marca)
+app.use('/uploads', express.static(path.resolve(env.UPLOAD_PATH), { maxAge: '1d' }));
 
 // Logging de requests (después del body parser para ver JSON, pero antes de Multer)
 app.use((req, res, next) => {

@@ -5,14 +5,21 @@ import { SupplierService } from './supplier.service';
 import { CreditService } from './credit.service';
 import { AppError } from '../middleware/error.middleware';
 import { getReceiptFileNames, buildReceiptUrls } from '../utils/receiptUrls';
+import { getInvoiceFileNames, buildInvoiceUrls } from '../utils/invoiceUrls';
 
 const supplierService = new SupplierService();
 const creditService = new CreditService();
 
 export class OrderService {
-  async createOrder(data: CreateOrderDTO, userId: number): Promise<OrderResponse> {
+  async createOrder(
+    data: CreateOrderDTO,
+    userId: number,
+    invoiceFileNames: string[] = [],
+    invoiceFilePaths?: string[]
+  ): Promise<OrderResponse> {
     const { supplierId, amount, dispatchDate, creditDays } = data;
     const surplusAmountToApply = Number(data.surplusAmountToApply ?? 0);
+    const invoiceNames = (invoiceFileNames || []).slice(0, 2);
 
     // Verificar que el proveedor existe
     const supplier = await prisma.supplier.findUnique({
@@ -58,7 +65,10 @@ export class OrderService {
           dispatchDate: dispatch,
           creditDays,
           dueDate,
-          createdBy: userId
+          createdBy: userId,
+          ...(invoiceNames.length > 0 && {
+            invoiceFiles: invoiceNames as unknown as Prisma.InputJsonValue
+          })
         },
         include: {
           supplier: {
@@ -126,6 +136,7 @@ export class OrderService {
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       title: debt.title ?? null,
+      invoiceFiles: buildInvoiceUrls(order.id, getInvoiceFileNames(order)),
       debt: {
         id: debt.id,
         status: debt.status,
@@ -200,6 +211,7 @@ export class OrderService {
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       title: order.debt?.title ?? null,
+      invoiceFiles: buildInvoiceUrls(order.id, getInvoiceFileNames(order)),
       debt: order.debt ? {
         id: order.debt.id,
         status: order.debt.status,
@@ -294,6 +306,7 @@ export class OrderService {
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
         title: order.debt?.title ?? null,
+        invoiceFiles: buildInvoiceUrls(order.id, getInvoiceFileNames(order)),
         debt: order.debt ? {
           id: order.debt.id,
           status: order.debt.status,
@@ -366,6 +379,7 @@ export class OrderService {
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
         title: order.debt?.title ?? null,
+        invoiceFiles: buildInvoiceUrls(order.id, getInvoiceFileNames(order)),
         debt: order.debt ? {
           id: order.debt.id,
           status: order.debt.status,
@@ -394,7 +408,12 @@ export class OrderService {
    */
   async updateOrder(
     orderId: number,
-    data: UpdateOrderDTO
+    data: UpdateOrderDTO & {
+      invoiceFileNames?: string[] | null;
+      invoiceFilePaths?: string[];
+      existingInvoiceFileNames?: string[];
+      removeInvoice?: boolean;
+    }
   ): Promise<OrderResponse> {
     try {
       console.log(`🔄 Actualizando orden ${orderId} con datos:`, data);
@@ -436,7 +455,25 @@ export class OrderService {
       const surplusAmtChanged =
         surplusFieldPresent && Math.abs(newSurplusTotal - oldSurplus) > 1e-9;
 
-      // 2. Validar que al menos un campo se esté actualizando
+      // 2. Calcular las facturas resultantes (máx. 2)
+      const oldInvoiceNames = getInvoiceFileNames(currentOrder);
+      let newInvoiceNames = oldInvoiceNames;
+
+      if (data.removeInvoice || data.invoiceFileNames === null) {
+        newInvoiceNames = [];
+      } else if (Array.isArray(data.invoiceFileNames) && data.invoiceFileNames.length > 0) {
+        newInvoiceNames = data.invoiceFileNames.slice(0, 2);
+      } else if (data.existingInvoiceFileNames !== undefined) {
+        const oldSet = new Set(oldInvoiceNames);
+        newInvoiceNames = data.existingInvoiceFileNames
+          .filter((name) => oldSet.has(name))
+          .slice(0, 2);
+      }
+
+      const invoiceChanged =
+        JSON.stringify(newInvoiceNames) !== JSON.stringify(oldInvoiceNames);
+
+      // 3. Validar que al menos un campo se esté actualizando
       const currentTitle = currentOrder.debt?.title ?? null;
       const newTitle = data.title !== undefined ? data.title : null;
       const hasChanges =
@@ -445,7 +482,8 @@ export class OrderService {
         (data.creditDays !== undefined && data.creditDays !== currentOrder.creditDays) ||
         (data.amount !== undefined && data.amount !== oldAmount) ||
         (data.title !== undefined && newTitle !== currentTitle) ||
-        surplusAmtChanged;
+        surplusAmtChanged ||
+        invoiceChanged;
 
       if (!hasChanges) {
         throw new AppError('No se han realizado cambios en la orden', 400);
@@ -562,6 +600,13 @@ export class OrderService {
           orderUpdateData.amount = newAmount;
         }
 
+        if (invoiceChanged) {
+          orderUpdateData.invoiceFiles =
+            newInvoiceNames.length > 0
+              ? (newInvoiceNames as unknown as Prisma.InputJsonValue)
+              : Prisma.DbNull;
+        }
+
         const order = await tx.order.update({
           where: { id: orderId },
           data: orderUpdateData,
@@ -621,6 +666,25 @@ export class OrderService {
 
         return order;
       });
+
+      // Eliminar del disco las facturas que ya no se conservan
+      if (invoiceChanged) {
+        const { env } = await import('../config/env');
+        const fs = await import('fs');
+        const path = await import('path');
+        const toRemove = oldInvoiceNames.filter((name) => !newInvoiceNames.includes(name));
+        for (const name of toRemove) {
+          try {
+            const filePath = path.resolve(env.UPLOAD_PATH, 'invoice', name);
+            if (fs.existsSync(filePath)) {
+              fs.unlinkSync(filePath);
+              console.log('🗑️ Factura eliminada:', name);
+            }
+          } catch (fileError: any) {
+            console.error('⚠️ Error al eliminar factura:', fileError.message);
+          }
+        }
+      }
 
       // Reconciliar créditos si cambió el saldo excedente aplicado
       if (surplusAmtChanged) {
@@ -691,6 +755,7 @@ export class OrderService {
         createdAt: orderWithDebt.createdAt,
         updatedAt: orderWithDebt.updatedAt,
         title: orderWithDebt.debt?.title ?? null,
+        invoiceFiles: buildInvoiceUrls(orderWithDebt.id, getInvoiceFileNames(orderWithDebt)),
         debt: orderWithDebt.debt ? {
           id: orderWithDebt.debt.id,
           status: orderWithDebt.debt.status,
