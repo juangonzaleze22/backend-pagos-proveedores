@@ -47,6 +47,7 @@ enum DebtStatus {
 enum PaymentMethod {
   ZELLE
   TRANSFER
+  PAGO_MOVIL
   CASH
 }
 

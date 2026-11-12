@@ -2,7 +2,7 @@
 // Si hay error, ejecutar: npm run prisma:generate
 export type SupplierStatus = 'PENDING' | 'COMPLETED';
 export type DebtStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE';
-export type PaymentMethod = 'ZELLE' | 'TRANSFER' | 'CASH';
+export type PaymentMethod = 'ZELLE' | 'TRANSFER' | 'PAGO_MOVIL' | 'CASH';
 export type SupplierPaymentMethodType = 'PAGO_MOVIL' | 'ZELLE' | 'TRANSFER';
 
 /** Datos de una cuenta de pago del proveedor (entrada y salida). */

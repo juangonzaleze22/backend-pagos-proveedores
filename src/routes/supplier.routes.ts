@@ -3,6 +3,7 @@ import { SupplierController } from '../controllers/supplier.controller';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validation.middleware';
+import { uploadInvoiceMultiple, handleMulterError } from '../config/multer';
 
 const router = Router();
 const supplierController = new SupplierController();
@@ -12,6 +13,8 @@ router.use(authenticate);
 
 router.post(
   '/',
+  uploadInvoiceMultiple('invoiceFiles', 2),
+  handleMulterError,
   validate([
     body('companyName').trim().isLength({ min: 3 }).withMessage('El nombre de la empresa debe tener al menos 3 caracteres'),
     body('taxId').optional().trim().notEmpty().withMessage('El RIF/Identificación Fiscal no puede estar vacío'),
@@ -21,7 +24,19 @@ router.post(
     }).withMessage('El email o identificador debe ser texto'),
     body('phone').optional().trim().isString().withMessage('El teléfono debe ser una cadena de texto'),
     body('title').optional().trim().isString().withMessage('El título de la deuda debe ser un texto'),
-    body('paymentAccounts').optional().isArray().withMessage('paymentAccounts debe ser un arreglo')
+    body('paymentAccounts').optional().custom((value) => {
+      if (value === null || value === undefined || value === '') return true;
+      if (Array.isArray(value)) return true;
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) return true;
+        } catch {
+          // cae al throw de abajo
+        }
+      }
+      throw new Error('paymentAccounts debe ser un arreglo válido');
+    })
   ]),
   authorize('ADMINISTRADOR', 'SUPERVISOR'),
   supplierController.create.bind(supplierController)

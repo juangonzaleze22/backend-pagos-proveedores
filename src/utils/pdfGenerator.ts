@@ -8,6 +8,7 @@ import type { SupplierDetailedReport, PaymentMethod, DebtStatus } from '../types
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   ZELLE: 'Zelle',
   TRANSFER: 'Transferencia',
+  PAGO_MOVIL: 'Pago Móvil',
   CASH: 'Efectivo'
 };
 

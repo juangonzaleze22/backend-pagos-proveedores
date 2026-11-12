@@ -49,7 +49,14 @@ async function optimizeFile(
   const inputPath = file.path;
   const dir = path.dirname(inputPath);
   const baseName = path.basename(inputPath, path.extname(inputPath));
-  const outputPath = path.join(dir, `${baseName}.webp`);
+  const finalName = `${baseName}.webp`;
+  const finalPath = path.join(dir, finalName);
+  // Escribir siempre a un temporal: si el original ya es .webp, outputPath
+  // coincidiría con inputPath y un borrado eliminaría el archivo válido.
+  const tempPath = path.join(
+    dir,
+    `${baseName}.opt-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`,
+  );
   const originalSize = file.size;
 
   try {
@@ -69,25 +76,24 @@ async function optimizeFile(
 
     await pipeline
       .webp({ quality: options.quality ?? 80, effort: 4 })
-      .toFile(outputPath);
+      .toFile(tempPath);
 
-    const { size } = await fs.stat(outputPath);
+    const { size } = await fs.stat(tempPath);
 
     if (size >= originalSize) {
-      await fs.unlink(outputPath).catch(() => undefined);
+      // El WebP no redujo peso: conservar el archivo original tal cual.
+      await fs.unlink(tempPath).catch(() => undefined);
       logger.debug(
         `Imagen conservada en formato original (WebP no redujo peso): ${file.filename}`,
       );
       return;
     }
 
-    if (outputPath !== inputPath) {
-      await fs.unlink(inputPath).catch(() => undefined);
-    }
+    await fs.unlink(inputPath).catch(() => undefined);
+    await fs.rename(tempPath, finalPath);
 
-    const webpName = path.basename(outputPath);
-    file.filename = webpName;
-    file.path = outputPath;
+    file.filename = finalName;
+    file.path = finalPath;
     file.mimetype = 'image/webp';
     file.size = size;
     file.originalname = `${path.basename(
@@ -96,12 +102,12 @@ async function optimizeFile(
     )}.webp`;
 
     logger.info(
-      `Imagen optimizada: ${webpName} (${Math.round(originalSize / 1024)}KB -> ${Math.round(
+      `Imagen optimizada: ${finalName} (${Math.round(originalSize / 1024)}KB -> ${Math.round(
         size / 1024,
       )}KB)`,
     );
   } catch (error) {
-    await fs.unlink(outputPath).catch(() => undefined);
+    await fs.unlink(tempPath).catch(() => undefined);
     logger.warn(`No se pudo optimizar la imagen ${file.filename}`, error);
   }
 }

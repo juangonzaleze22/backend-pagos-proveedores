@@ -18,7 +18,7 @@ import { getReceiptFileNames, buildReceiptUrl, buildReceiptUrls } from '../utils
 import { brandingService } from './branding.service';
 
 // PaymentMethod type
-type PaymentMethod = 'ZELLE' | 'TRANSFER' | 'CASH';
+type PaymentMethod = 'ZELLE' | 'TRANSFER' | 'PAGO_MOVIL' | 'CASH';
 
 const debtService = new DebtService();
 const supplierService = new SupplierService();
@@ -114,7 +114,7 @@ export class PaymentService {
       });
 
       // Validar confirmationNumber para Zelle y Transfer
-      if ((paymentMethod === 'ZELLE' || paymentMethod === 'TRANSFER') && !confirmationNumber) {
+      if ((paymentMethod === 'ZELLE' || paymentMethod === 'TRANSFER' || paymentMethod === 'PAGO_MOVIL') && !confirmationNumber) {
         console.error('❌ ConfirmationNumber requerido para:', paymentMethod);
         throw new Error('Número de confirmación requerido para este método de pago');
       }
@@ -734,6 +734,7 @@ export class PaymentService {
     const byPaymentMethod: CashierPaymentsSummary['byPaymentMethod'] = {
       ZELLE: { count: 0, totalUsd: 0 },
       TRANSFER: { count: 0, totalUsd: 0 },
+      PAGO_MOVIL: { count: 0, totalUsd: 0 },
       CASH: { count: 0, totalUsd: 0 }
     };
     for (const row of groupByMethod) {
@@ -1295,7 +1296,7 @@ export class PaymentService {
       }
 
       // 4. Validar confirmationNumber si es Zelle o Transfer
-      if (data.paymentMethod && (data.paymentMethod === 'ZELLE' || data.paymentMethod === 'TRANSFER')) {
+      if (data.paymentMethod && (data.paymentMethod === 'ZELLE' || data.paymentMethod === 'TRANSFER' || data.paymentMethod === 'PAGO_MOVIL')) {
         if (!data.confirmationNumber) {
           // Si no se proporciona, verificar que el pago actual ya tenga uno
           if (!oldPayment.confirmationNumber) {

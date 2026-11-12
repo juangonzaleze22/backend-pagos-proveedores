@@ -125,7 +125,7 @@ router.post(
       } */
       return true;
     }),
-    body('paymentMethod').isIn(['ZELLE', 'TRANSFER', 'CASH']).withMessage('Método de pago inválido'),
+    body('paymentMethod').isIn(['ZELLE', 'TRANSFER', 'PAGO_MOVIL', 'CASH']).withMessage('Método de pago inválido'),
     body('senderName').notEmpty().withMessage('Nombre del emisor es requerido'),
     body('senderEmail').optional().custom((value) => {
       if (value === null || value === '' || value === undefined) {
@@ -271,7 +271,7 @@ router.put(
       }
       return true;
     }),
-    body('paymentMethod').optional().isIn(['ZELLE', 'TRANSFER', 'CASH']).withMessage('Método de pago inválido'),
+    body('paymentMethod').optional().isIn(['ZELLE', 'TRANSFER', 'PAGO_MOVIL', 'CASH']).withMessage('Método de pago inválido'),
     body('senderName').optional().notEmpty().withMessage('Nombre del emisor es requerido'),
     body('senderEmail').optional().custom((value) => {
       if (value === null || value === '' || value === undefined) {

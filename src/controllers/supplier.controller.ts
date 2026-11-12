@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { SupplierService } from '../services/supplier.service';
 import { AppError } from '../middleware/error.middleware';
+import fs from 'fs';
 
 const supplierService = new SupplierService();
 
@@ -11,8 +12,26 @@ export class SupplierController {
         throw new AppError('Usuario no autenticado', 401);
       }
 
-      console.log('Creando proveedor con datos:', req.body);
-      const supplier = await supplierService.createSupplier(req.body, req.user.userId);
+      // paymentAccounts puede venir como array (JSON) o como string JSON (FormData)
+      let paymentAccounts = req.body.paymentAccounts;
+      if (typeof paymentAccounts === 'string') {
+        try {
+          paymentAccounts = JSON.parse(paymentAccounts);
+        } catch {
+          throw new AppError('Los métodos de pago enviados no son válidos', 400);
+        }
+      }
+
+      const files = (req as any).files as Express.Multer.File[] | undefined;
+      const fileList = Array.isArray(files) ? files : [];
+
+      console.log('Creando proveedor con datos:', { ...req.body, paymentAccounts });
+      const supplier = await supplierService.createSupplier(
+        { ...req.body, paymentAccounts },
+        req.user.userId,
+        fileList.map((f) => f.filename),
+        fileList.map((f) => f.path)
+      );
       console.log('Proveedor creado exitosamente:', supplier.id);
 
       res.status(201).json({
@@ -22,6 +41,18 @@ export class SupplierController {
       });
     } catch (error: any) {
       console.error('Error al crear proveedor:', error);
+      const files = (req as any).files as Express.Multer.File[] | undefined;
+      if (Array.isArray(files)) {
+        for (const file of files) {
+          try {
+            if (file.path && fs.existsSync(file.path)) {
+              fs.unlinkSync(file.path);
+            }
+          } catch {
+            // Ignorar errores al limpiar archivos
+          }
+        }
+      }
       next(error);
     }
   }

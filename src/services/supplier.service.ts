@@ -14,8 +14,14 @@ import type { SupplierStatus } from '../types';
 import { AppError } from '../middleware/error.middleware';
 
 export class SupplierService {
-  async createSupplier(data: CreateSupplierDTO, userId: number): Promise<SupplierResponse> {
+  async createSupplier(
+    data: CreateSupplierDTO,
+    userId: number,
+    invoiceFileNames: string[] = [],
+    invoiceFilePaths?: string[]
+  ): Promise<SupplierResponse> {
     const { companyName, taxId, email, phone, status, initialDebtAmount, debtDate, creditDays, title } = data;
+    const invoiceNames = (invoiceFileNames || []).slice(0, 2);
 
     // Validar que el taxId sea único solo si se proporciona
     if (taxId != null && taxId !== '') {
@@ -68,7 +74,10 @@ export class SupplierService {
           dispatchDate,
           creditDays: creditDaysNum,
           dueDate,
-          createdBy: userId
+          createdBy: userId,
+          ...(invoiceNames.length > 0 && {
+            invoiceFiles: invoiceNames as unknown as Prisma.InputJsonValue
+          })
         }
       });
 
