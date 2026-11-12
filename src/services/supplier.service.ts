@@ -37,6 +37,23 @@ export class SupplierService {
     const debtAmount = typeof initialDebtAmount === 'string' 
       ? parseFloat(initialDebtAmount) 
       : (initialDebtAmount || 0);
+    const creditDaysNum = typeof creditDays === 'string' ? parseInt(creditDays) : Number(creditDays);
+
+    // Todo proveedor nuevo debe crearse con su deuda inicial
+    if (!(debtAmount > 0)) {
+      throw new AppError('El monto de la deuda inicial debe ser mayor a 0. No se puede registrar un proveedor sin deuda.', 400);
+    }
+    if (!debtDate) {
+      throw new AppError('La fecha de la deuda inicial es requerida', 400);
+    }
+    if (!Number.isFinite(creditDaysNum) || creditDaysNum < 0) {
+      throw new AppError('Los días de crédito son requeridos y deben ser mayores o iguales a 0', 400);
+    }
+
+    const dispatchDate = new Date(debtDate);
+    if (isNaN(dispatchDate.getTime())) {
+      throw new AppError('La fecha de la deuda inicial no es válida', 400);
+    }
 
     const paymentAccounts = this.normalizePaymentAccounts(data.paymentAccounts);
 
@@ -59,13 +76,10 @@ export class SupplierService {
       include: { paymentAccounts: true }
     });
 
-    // Si hay deuda inicial, crear pedido y deuda
-    if (debtAmount > 0 && debtDate && creditDays) {
-      const dispatchDate = new Date(debtDate);
+    // Crear pedido y deuda inicial
+    if (debtAmount > 0) {
       const dueDate = new Date(dispatchDate);
-      dueDate.setDate(dueDate.getDate() + creditDays);
-
-      const creditDaysNum = typeof creditDays === 'string' ? parseInt(creditDays) : creditDays;
+      dueDate.setDate(dueDate.getDate() + creditDaysNum);
 
       const order = await prisma.order.create({
         data: {

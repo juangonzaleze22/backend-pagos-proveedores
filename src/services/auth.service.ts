@@ -2,6 +2,7 @@ import prisma from '../config/database';
 import { comparePassword } from '../utils/hashPassword';
 import { generateToken } from '../utils/jwt';
 import { LoginDTO, AuthResponse } from '../types';
+import { AppError } from '../middleware/error.middleware';
 
 export class AuthService {
   async login(data: LoginDTO): Promise<AuthResponse> {
@@ -14,13 +15,13 @@ export class AuthService {
     });
 
     if (!usuario) {
-      throw new Error('Credenciales inválidas');
+      throw new AppError('Credenciales inválidas', 401);
     }
 
     // Verificar contraseña
     const isValidPassword = await comparePassword(password, usuario.password);
     if (!isValidPassword) {
-      throw new Error('Credenciales inválidas');
+      throw new AppError('Credenciales inválidas', 401);
     }
 
     // Generar token
