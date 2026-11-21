@@ -9,10 +9,10 @@
   "scripts": {
     "postinstall": "prisma generate",
     "dev": "nodemon",
-    "build": "node -e \"try { require('fs').rmSync('dist', { recursive: true }) } catch (e) {}\" && prisma generate && tsc && node scripts/copy-assets.js",
+    "build": "node scripts/build.js",
     "build:deploy": "npm run build",
     "build:local": "node -e \"try { require('fs').rmSync('dist', { recursive: true }) } catch (e) {}\" && prisma generate && prisma db push && tsc && node scripts/copy-assets.js",
-    "build:hostinger": "npm run build:deploy && bestzip deploy.zip package.json package-lock.json dist prisma",
+    "build:hostinger": "npm run build:deploy && bestzip deploy.zip package.json package-lock.json dist prisma scripts",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:dbpush": "prisma db push",
