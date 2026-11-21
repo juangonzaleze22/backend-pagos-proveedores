@@ -42,9 +42,21 @@ export async function runSeed(prisma?: PrismaClient): Promise<void> {
       { email: `cajero3@${emailDomain}`, nombre: 'Cajero 3', rolNombre: 'CAJERO' },
     ];
 
+    const updatePasswords = process.env.SEED_UPDATE_PASSWORDS === 'true';
+
     for (const usuario of usuarios) {
       const existing = await client.usuario.findUnique({ where: { email: usuario.email } });
-      if (existing) continue;
+
+      if (existing) {
+        if (updatePasswords) {
+          await client.usuario.update({
+            where: { id: existing.id },
+            data: { password: hashedPassword },
+          });
+          console.log(`🔑 Contraseña actualizada: ${usuario.email}`);
+        }
+        continue;
+      }
 
       await client.usuario.create({
         data: {

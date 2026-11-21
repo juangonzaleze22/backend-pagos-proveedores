@@ -65,6 +65,12 @@ async function main() {
         }
       });
       console.log(`✅ Usuario creado: ${usuario.email} (${usuario.rolNombre})`);
+    } else if (process.env.SEED_UPDATE_PASSWORDS === 'true') {
+      await prisma.usuario.update({
+        where: { id: existingUsuario.id },
+        data: { password: hashedPassword }
+      });
+      console.log(`🔑 Contraseña actualizada: ${usuario.email}`);
     } else {
       console.log(`ℹ️  Usuario ya existe: ${usuario.email}`);
     }
