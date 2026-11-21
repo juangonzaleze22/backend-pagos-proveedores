@@ -33,41 +33,36 @@ async function main() {
   }
 
   // Hash de password por defecto
-  const defaultPassword = 'pagosproveedores123';
+  const defaultPassword = 'puengarpagos123';
   const hashedPassword = await bcrypt.hash(defaultPassword, 10);
 
   // Crear usuarios
   const usuarios = [
     {
-      email: 'admin@pagosproveedores.com',
+      email: 'admin@puengarpagos.com',
       nombre: 'Administrador',
       rolNombre: 'ADMINISTRADOR'
     },
     {
-      email: 'supervisor@pagosproveedores.com',
+      email: 'supervisor@puengarpagos.com',
       nombre: 'Supervisor',
       rolNombre: 'SUPERVISOR'
     },
     {
-      email: 'cajero1@pagosproveedores.com',
+      email: 'cajero1@puengarpagos.com',
       nombre: 'Cajero 1',
       rolNombre: 'CAJERO'
     },
     {
-      email: 'cajero2@pagosproveedores.com',
+      email: 'cajero2@puengarpagos.com',
       nombre: 'Cajero 2',
       rolNombre: 'CAJERO'
     },
     {
-      email: 'cajero3@pagosproveedores.com',
+      email: 'cajero3@puengarpagos.com',
       nombre: 'Cajero 3',
       rolNombre: 'CAJERO'
     },
-    {
-      email: 'cajero4@pagosproveedores.com',
-      nombre: 'Cajero 4 (CXC)',
-      rolNombre: 'CAJERO'
-    }
   ];
 
   for (const usuario of usuarios) {
@@ -102,7 +97,7 @@ async function main() {
   console.log('✨ Seed completado exitosamente!');
   console.log('\n📝 Credenciales por defecto:');
   console.log(
-    '   Email: admin@pagosproveedores.com | supervisor@pagosproveedores.com | cajero1@pagosproveedores.com'
+    '   Email: admin@puengarpagos.com | supervisor@puengarpagos.com | cajero1@puengarpagos.com'
   );
   console.log(`   Password: ${defaultPassword}`);
 }

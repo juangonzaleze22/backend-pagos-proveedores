@@ -5,6 +5,7 @@ import { env } from './config/env';
 import app from './app';
 import { logger } from './utils/logger';
 import prisma from './config/database';
+import { runSeed } from './scripts/seed';
 import { logRuntimeBootstrap, logPrismaConnectError } from './utils/runtimeDiagnostics';
 
 // Capturar errores no manejados (útil en runtime logs del panel)
@@ -73,6 +74,20 @@ function runDbPushIfEnabled() {
   }
 }
 
+async function runSeedIfEnabled() {
+  if (process.env.RUN_SEED_ON_START !== 'true') {
+    console.log('[SEED] Omitido (RUN_SEED_ON_START != "true").');
+    return;
+  }
+
+  try {
+    console.log('[SEED] Ejecutando seed inicial...');
+    await runSeed(prisma);
+  } catch (e: any) {
+    console.error('[SEED] Error (la app continúa):', e?.message || e);
+  }
+}
+
 // Función para iniciar el servidor
 async function startServer() {
   let prismaConnectErrorLogged = false;
@@ -98,6 +113,8 @@ async function startServer() {
       `[BOOT] ${new Date().toISOString()} phase=PRISMA_CONNECT_OK ms=${Date.now() - connectStarted}`
     );
     console.log('✅ Conexión a la base de datos establecida');
+
+    await runSeedIfEnabled();
 
     // Iniciar servidor (escuchar en todas las interfaces)
     app.listen(PORT, () => {
