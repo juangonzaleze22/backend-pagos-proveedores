@@ -32,37 +32,22 @@ async function main() {
     }
   }
 
-  // Hash de password por defecto
-  const defaultPassword = 'puengarpagos123';
+  // Hash de password por defecto (desde variable de entorno, nunca en el repo)
+  const defaultPassword = process.env.SEED_PASSWORD;
+  if (!defaultPassword) {
+    throw new Error('SEED_PASSWORD no está definida. Exporta SEED_PASSWORD antes de correr el seed.');
+  }
   const hashedPassword = await bcrypt.hash(defaultPassword, 10);
 
   // Crear usuarios
+  const emailDomain = (process.env.SEED_EMAIL_DOMAIN || 'puengarpagos.com').trim().replace(/^@/, '');
+
   const usuarios = [
-    {
-      email: 'admin@puengarpagos.com',
-      nombre: 'Administrador',
-      rolNombre: 'ADMINISTRADOR'
-    },
-    {
-      email: 'supervisor@puengarpagos.com',
-      nombre: 'Supervisor',
-      rolNombre: 'SUPERVISOR'
-    },
-    {
-      email: 'cajero1@puengarpagos.com',
-      nombre: 'Cajero 1',
-      rolNombre: 'CAJERO'
-    },
-    {
-      email: 'cajero2@puengarpagos.com',
-      nombre: 'Cajero 2',
-      rolNombre: 'CAJERO'
-    },
-    {
-      email: 'cajero3@puengarpagos.com',
-      nombre: 'Cajero 3',
-      rolNombre: 'CAJERO'
-    },
+    { email: `admin@${emailDomain}`, nombre: 'Administrador', rolNombre: 'ADMINISTRADOR' },
+    { email: `supervisor@${emailDomain}`, nombre: 'Supervisor', rolNombre: 'SUPERVISOR' },
+    { email: `cajero1@${emailDomain}`, nombre: 'Cajero 1', rolNombre: 'CAJERO' },
+    { email: `cajero2@${emailDomain}`, nombre: 'Cajero 2', rolNombre: 'CAJERO' },
+    { email: `cajero3@${emailDomain}`, nombre: 'Cajero 3', rolNombre: 'CAJERO' },
   ];
 
   for (const usuario of usuarios) {
@@ -95,11 +80,9 @@ async function main() {
   }
 
   console.log('✨ Seed completado exitosamente!');
-  console.log('\n📝 Credenciales por defecto:');
-  console.log(
-    '   Email: admin@puengarpagos.com | supervisor@puengarpagos.com | cajero1@puengarpagos.com'
-  );
-  console.log(`   Password: ${defaultPassword}`);
+  console.log('\n📝 Usuarios creados (misma contraseña para todos):');
+  console.log(`   admin@${emailDomain} | supervisor@${emailDomain} | cajero1@${emailDomain}`);
+  console.log('   Contraseña: la definida en SEED_PASSWORD.');
 }
 
 main()

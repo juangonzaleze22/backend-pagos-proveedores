@@ -24,16 +24,22 @@ export async function runSeed(prisma?: PrismaClient): Promise<void> {
       }
     }
 
-    const defaultPassword = 'pagosproveedores123';
+    const defaultPassword = process.env.SEED_PASSWORD;
+    if (!defaultPassword) {
+      console.warn('[SEED] SEED_PASSWORD no definida: no se crean usuarios.');
+      return;
+    }
+
     const hashedPassword = await bcrypt.hash(defaultPassword, 10);
 
+    const emailDomain = (process.env.SEED_EMAIL_DOMAIN || 'puengarpagos.com').trim().replace(/^@/, '');
+
     const usuarios = [
-      { email: 'admin@pagosproveedores.com', nombre: 'Administrador', rolNombre: 'ADMINISTRADOR' },
-      { email: 'supervisor@pagosproveedores.com', nombre: 'Supervisor', rolNombre: 'SUPERVISOR' },
-      { email: 'cajero1@pagosproveedores.com', nombre: 'Cajero 1', rolNombre: 'CAJERO' },
-      { email: 'cajero2@pagosproveedores.com', nombre: 'Cajero 2', rolNombre: 'CAJERO' },
-      { email: 'cajero3@pagosproveedores.com', nombre: 'Cajero 3', rolNombre: 'CAJERO' },
-      { email: 'cajero4@pagosproveedores.com', nombre: 'Cajero 4 (CXC)', rolNombre: 'CAJERO' },
+      { email: `admin@${emailDomain}`, nombre: 'Administrador', rolNombre: 'ADMINISTRADOR' },
+      { email: `supervisor@${emailDomain}`, nombre: 'Supervisor', rolNombre: 'SUPERVISOR' },
+      { email: `cajero1@${emailDomain}`, nombre: 'Cajero 1', rolNombre: 'CAJERO' },
+      { email: `cajero2@${emailDomain}`, nombre: 'Cajero 2', rolNombre: 'CAJERO' },
+      { email: `cajero3@${emailDomain}`, nombre: 'Cajero 3', rolNombre: 'CAJERO' },
     ];
 
     for (const usuario of usuarios) {
