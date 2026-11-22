@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
+import sharp from 'sharp';
 import { Writable } from 'stream';
 import { env } from '../config/env';
 import type { SupplierDetailedReport, PaymentMethod, DebtStatus } from '../types';
@@ -107,17 +108,47 @@ function resolveColors(branding?: PdfBranding) {
   };
 }
 
-function resolveUploadedLogo(logoPath?: string | null): string | null {
-  if (!logoPath) return null;
-  const relative = logoPath.replace(/^\/?uploads\//, '');
-  const diskPath = path.isAbsolute(logoPath) ? logoPath : path.join(env.UPLOAD_PATH, relative);
-  return fs.existsSync(diskPath) ? diskPath : null;
+function isFile(filePath: string): boolean {
+  try {
+    return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
 }
 
-function getLogoPath(branding?: PdfBranding): string | null {
-  const uploaded = resolveUploadedLogo(branding?.logoPath);
-  if (uploaded) return uploaded;
+/** Convierte "/uploads/branding/archivo.webp" (o una URL completa) a ruta absoluta en disco. */
+function resolveUploadedLogo(logoPath?: string | null): string | null {
+  if (!logoPath) return null;
+  let value = logoPath.trim();
+  if (!value) return null;
 
+  // Si llega una URL completa, quedarnos solo con el pathname.
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      value = new URL(value).pathname;
+    } catch {
+      // Si no se puede parsear, seguir con el valor original.
+    }
+  }
+
+  const candidates: string[] = [];
+  if (path.isAbsolute(value)) candidates.push(value);
+
+  const relative = value.replace(/^\/?uploads\//i, '').replace(/^\/+/, '');
+  candidates.push(
+    path.join(env.UPLOAD_PATH, relative),
+    path.resolve(env.UPLOAD_PATH, relative),
+    path.join(process.cwd(), 'uploads', relative),
+    path.join(__dirname, '..', '..', 'uploads', relative)
+  );
+
+  for (const candidate of candidates) {
+    if (isFile(candidate)) return candidate;
+  }
+  return null;
+}
+
+function getDefaultLogoPath(): string | null {
   const candidates = [
     path.join(__dirname, '..', 'assets', 'logo.png'),
     path.join(process.cwd(), 'dist', 'assets', 'logo.png'),
@@ -126,7 +157,39 @@ function getLogoPath(branding?: PdfBranding): string | null {
     path.join(process.cwd(), 'assets', 'logo.png')
   ];
   for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
+    if (isFile(p)) return p;
+  }
+  return null;
+}
+
+interface LoadedLogo {
+  buffer: Buffer;
+  width: number;
+  height: number;
+}
+
+/**
+ * Obtiene el logo configurado en el módulo de apariencia.
+ * PDFKit solo soporta JPEG/PNG, por eso cualquier formato (incluido WebP)
+ * se normaliza a PNG con sharp antes de incrustarlo.
+ */
+async function loadLogo(branding?: PdfBranding): Promise<LoadedLogo | null> {
+  const uploaded = resolveUploadedLogo(branding?.logoPath);
+  const filePaths = [uploaded, getDefaultLogoPath()].filter((p): p is string => !!p);
+
+  for (const filePath of filePaths) {
+    try {
+      const image = sharp(filePath);
+      const metadata = await image.metadata();
+      const buffer = await image.png().toBuffer();
+      return {
+        buffer,
+        width: metadata.width ?? 1,
+        height: metadata.height ?? 1
+      };
+    } catch {
+      // Probar con el siguiente candidato (por ejemplo, el logo por defecto).
+    }
   }
   return null;
 }
@@ -164,11 +227,11 @@ function formatCurrency(amount: number): string {
 /**
  * Genera un PDF con el reporte de pagos a un proveedor y lo escribe en el stream.
  */
-export function generateSupplierPaymentsPdf(
+export async function generateSupplierPaymentsPdf(
   data: SupplierDetailedReport,
   writeStream: Writable,
   branding?: PdfBranding
-): void {
+): Promise<void> {
   // Sombra la paleta global con los colores configurados por el cliente.
   const COLORS = resolveColors(branding);
 
@@ -189,17 +252,25 @@ export function generateSupplierPaymentsPdf(
   doc.fillColor(COLORS.headerBg).rect(0, 0, pageWidth, headerHeight).fill();
   doc.strokeColor(COLORS.border).lineWidth(0.5).moveTo(0, headerHeight).lineTo(pageWidth, headerHeight).stroke();
 
-  const logoPath = getLogoPath(branding);
-  if (logoPath) {
+  const logo = await loadLogo(branding);
+  if (logo) {
     try {
-      doc.image(logoPath, margin, 16, { width: 90, height: 32 });
+      // Ajustar dentro de la caja del encabezado sin deformar la imagen.
+      const maxWidth = 90;
+      const maxHeight = 32;
+      const scale = Math.min(maxWidth / logo.width, maxHeight / logo.height);
+      const drawWidth = logo.width * scale;
+      const drawHeight = logo.height * scale;
+      const drawY = 16 + (maxHeight - drawHeight) / 2;
+      doc.image(logo.buffer, margin, drawY, { width: drawWidth, height: drawHeight });
     } catch {
       // Si falla la imagen, seguir sin logo
     }
   }
 
-  const textX = logoPath ? margin + 100 : margin;
-  const textWidth = logoPath ? contentWidth - 100 : contentWidth;
+  const hasLogo = !!logo;
+  const textX = hasLogo ? margin + 100 : margin;
+  const textWidth = hasLogo ? contentWidth - 100 : contentWidth;
   const generatedAt = `Generado el ${formatDate(new Date())}`;
 
   if (companyName) {
