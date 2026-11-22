@@ -9,7 +9,7 @@ import creditRoutes from './credit.routes';
 import reportRoutes from './report.routes';
 import brandingRoutes from './branding.routes';
 
-const router = Router();
+const router: Router = Router();
 
 router.use('/auth', authRoutes);
 router.use('/branding', brandingRoutes);

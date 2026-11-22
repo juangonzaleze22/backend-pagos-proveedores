@@ -6,7 +6,7 @@ import { validate } from '../middleware/validation.middleware';
 import { uploadMultiple, handleMulterError } from '../config/multer';
 import { optimizeUploadedImages } from '../middleware/image-optimizer.middleware';
 
-const router = Router();
+const router: Router = Router();
 const paymentController = new PaymentController();
 
 // Middleware de logging específico para payments (antes de authenticate)

@@ -6,7 +6,7 @@ import { validate } from '../middleware/validation.middleware';
 import { uploadInvoiceMultiple, handleMulterError } from '../config/multer';
 import { optimizeUploadedImages } from '../middleware/image-optimizer.middleware';
 
-const router = Router();
+const router: Router = Router();
 const orderController = new OrderController();
 
 // Endpoint PÚBLICO para servir facturas de pedidos (sin auth, para <img>)

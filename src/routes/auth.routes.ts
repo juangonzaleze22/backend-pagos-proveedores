@@ -4,7 +4,7 @@ import { authenticate } from '../middleware/auth.middleware';
 import { body } from 'express-validator';
 import { validate } from '../middleware/validation.middleware';
 
-const router = Router();
+const router: Router = Router();
 const authController = new AuthController();
 
 router.post(

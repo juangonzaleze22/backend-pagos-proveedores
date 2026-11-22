@@ -5,7 +5,7 @@ import { body, param } from 'express-validator';
 import { validate } from '../middleware/validation.middleware';
 import { uploadInvoiceMultiple, handleMulterError } from '../config/multer';
 
-const router = Router();
+const router: Router = Router();
 const supplierController = new SupplierController();
 
 // Todas las rutas requieren autenticación
