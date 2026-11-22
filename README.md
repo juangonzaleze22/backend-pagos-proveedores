@@ -86,13 +86,6 @@ api-vencedora-pagos-proveedores/
 
 ## 👥 Usuarios por Defecto (Seed)
 
-El seed crea los siguientes usuarios con password: `password123`
-
-- **Administrador**: admin@vencedora.com
-- **Supervisor**: supervisor@vencedora.com
-- **Cajero 1**: cajero1@vencedora.com
-- **Cajero 2**: cajero2@vencedora.com
-- **Cajero 3**: cajero3@vencedora.com
 
 ## 🔐 Roles
 
