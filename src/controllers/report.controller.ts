@@ -97,7 +97,7 @@ export class ReportController {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-      generateSupplierPaymentsPdf(data, res, {
+      await generateSupplierPaymentsPdf(data, res, {
         companyName: branding?.companyName,
         reportTitle: branding?.reportTitle,
         logoPath: branding?.logoPath,
