@@ -4,7 +4,7 @@ import { authenticate, authorize } from '../middleware/auth.middleware';
 import { param } from 'express-validator';
 import { validate } from '../middleware/validation.middleware';
 
-const router = Router();
+const router: Router = Router();
 const reportController = new ReportController();
 
 // Middleware de logging para reportes

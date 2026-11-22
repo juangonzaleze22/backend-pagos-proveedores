@@ -4,7 +4,7 @@ import { authenticate, authorize } from '../middleware/auth.middleware';
 import { uploadBrandingFields, handleMulterError } from '../config/multer';
 import { optimizeUploadedImages } from '../middleware/image-optimizer.middleware';
 
-const router = Router();
+const router: Router = Router();
 const brandingController = new BrandingController();
 
 // Público: el login necesita logo/colores antes de autenticarse.

@@ -8,7 +8,7 @@ import { validate } from '../middleware/validation.middleware';
 import { AppError } from '../middleware/error.middleware';
 import prisma from '../config/database';
 
-const router = Router();
+const router: Router = Router();
 const debtService = new DebtService();
 const paymentService = new PaymentService();
 const creditService = new CreditService();
